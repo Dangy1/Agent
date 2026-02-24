@@ -1,0 +1,65 @@
+{"ts": 1771336933.1944847, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336933.195915, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771336933.744861, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336933.7460349, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771336934.4909368, "kind": "call", "tool": "mcp_call_tool", "args": {"tool_name": "mcp_list_tools", "args_json": {}, "v__args": []}}
+{"ts": 1771336935.4139159, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336935.4151382, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771336936.0751064, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336936.0759995, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771336936.568637, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336936.5693524, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771336937.2662241, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336937.2672145, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771336939.3415854, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336939.3431568, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771336940.0652523, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771336940.0666375, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "'_GeneratorContextManager' object has no attribute 'call'"}
+{"ts": 1771338366.2293131, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771338366.2324493, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "MCP_SERVER_ARGS is empty. Set MCP_SERVER_ARGS to your MCP server script path."}
+{"ts": 1771338695.6954618, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771338695.697362, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "As of langchain-mcp-adapters 0.1.0, MultiServerMCPClient cannot be used as a context manager (e.g., async with MultiServerMCPClient(...)). Instead, you can do one of the following:\n1. client = MultiServerMCPClient(...)\n   tools = await client.get_tools()\n2. client = MultiServerMCPClient(...)\n   async with client.session(server_name) as session:\n       tools = await load_mcp_tools(session)"}
+{"ts": 1771339630.492024, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771339630.521215, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "unhandled errors in a TaskGroup (1 sub-exception)"}
+{"ts": 1771339631.0596008, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771339631.089741, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "unhandled errors in a TaskGroup (1 sub-exception)"}
+{"ts": 1771339631.775113, "kind": "call", "tool": "session_info", "args": {}}
+{"ts": 1771339632.239712, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771339632.2671525, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "unhandled errors in a TaskGroup (1 sub-exception)"}
+{"ts": 1771340620.4788544, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771340620.9856625, "kind": "call", "tool": "mcp_reset_tools_cache", "args": {}}
+{"ts": 1771340621.3408895, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771340863.6576169, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771340864.137768, "kind": "call", "tool": "mcp_reset_tools_cache", "args": {}}
+{"ts": 1771340864.467757, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771340925.8791444, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771340925.8807943, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "As of langchain-mcp-adapters 0.1.0, MultiServerMCPClient cannot be used as a context manager (e.g., async with MultiServerMCPClient(...)). Instead, you can do one of the following:\n1. client = MultiServerMCPClient(...)\n   tools = await client.get_tools()\n2. client = MultiServerMCPClient(...)\n   async with client.session(server_name) as session:\n       tools = await load_mcp_tools(session)"}
+{"ts": 1771340926.5554945, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771340926.5569296, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "As of langchain-mcp-adapters 0.1.0, MultiServerMCPClient cannot be used as a context manager (e.g., async with MultiServerMCPClient(...)). Instead, you can do one of the following:\n1. client = MultiServerMCPClient(...)\n   tools = await client.get_tools()\n2. client = MultiServerMCPClient(...)\n   async with client.session(server_name) as session:\n       tools = await load_mcp_tools(session)"}
+{"ts": 1771341779.870959, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771341783.43418, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "unhandled errors in a TaskGroup (1 sub-exception)"}
+{"ts": 1771341783.9569128, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771341786.53879, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "unhandled errors in a TaskGroup (1 sub-exception)"}
+{"ts": 1771341787.0975924, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771341790.6677155, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "unhandled errors in a TaskGroup (1 sub-exception)"}
+{"ts": 1771341791.2408226, "kind": "call", "tool": "mcp_list_tools", "args": {}}
+{"ts": 1771341793.7963839, "kind": "error", "tool": "mcp_list_tools", "args": {}, "error": "unhandled errors in a TaskGroup (1 sub-exception)"}
+{"ts": "2026-02-23T14:03:07.860296+00:00", "event": "mcp_call_start", "payload": {"tool": "slice_monitor_check", "args": {"duration_s": 30, "verbose": true, "timeout_s": 10, "tail_lines": 120, "stop_after_check": true}}}
+{"ts": "2026-02-23T14:03:07.861452+00:00", "event": "mcp_call_error", "payload": {"tool": "slice_monitor_check", "error": "RuntimeError: This method cannot be called from the event loop thread"}}
+{"ts": "2026-02-23T14:26:43.528109+00:00", "event": "mcp_call_start", "payload": {"tool": "slice_monitor_check", "args": {"duration_s": 30, "verbose": true, "timeout_s": 10, "tail_lines": 120, "stop_after_check": true}}}
+{"ts": "2026-02-23T14:29:14.415746+00:00", "event": "mcp_call_start", "payload": {"tool": "slice_monitor_check", "args": {"duration_s": 30, "verbose": true, "timeout_s": 10, "tail_lines": 120, "stop_after_check": true}}}
+{"ts": "2026-02-23T14:32:48.920201+00:00", "event": "mcp_call_start", "payload": {"tool": "slice_monitor_check", "args": {"duration_s": 30, "verbose": true, "timeout_s": 10, "tail_lines": 120, "stop_after_check": true}}}
+{"ts": "2026-02-23T14:50:45.547412+00:00", "event": "mcp_call_start", "payload": {"tool": "create_slices", "args": {"config": {"slice_sched_algo": "STATIC", "num_slices": 1, "slice_ids": [22]}}}}
+{"ts": "2026-02-23T14:50:45.548490+00:00", "event": "mcp_call_error", "payload": {"tool": "create_slices", "error": "ValueError: Unknown MCP tool 'create_slices'. Call mcp_list_tools first."}}
+{"ts": "2026-02-23T14:50:46.526641+00:00", "event": "mcp_call_start", "payload": {"tool": "create_slices", "args": {"config": {"slice_sched_algo": "STATIC", "num_slices": 1, "slice_ids": [22]}}}}
+{"ts": "2026-02-23T14:50:46.527433+00:00", "event": "mcp_call_error", "payload": {"tool": "create_slices", "error": "ValueError: Unknown MCP tool 'create_slices'. Call mcp_list_tools first."}}
+{"ts": "2026-02-23T14:50:48.537789+00:00", "event": "mcp_call_start", "payload": {"tool": "create_slices", "args": {"config": {"slice_sched_algo": "STATIC", "num_slices": 1, "slice_ids": [22]}}}}
+{"ts": "2026-02-23T14:50:48.538405+00:00", "event": "mcp_call_error", "payload": {"tool": "create_slices", "error": "ValueError: Unknown MCP tool 'create_slices'. Call mcp_list_tools first."}}
+{"ts": "2026-02-23T14:50:51.052914+00:00", "event": "mcp_call_start", "payload": {"tool": "create_slices", "args": {"config": {"slice_sched_algo": "STATIC", "num_slices": 1, "slice_ids": [22]}}}}
+{"ts": "2026-02-23T14:50:51.053628+00:00", "event": "mcp_call_error", "payload": {"tool": "create_slices", "error": "ValueError: Unknown MCP tool 'create_slices'. Call mcp_list_tools first."}}
+{"ts": "2026-02-23T15:53:35.426319+00:00", "event": "mcp_call_start", "payload": {"tool": "create_slices", "args": {"config": {"slice_sched_algo": "STATIC", "num_slices": 2, "slice_ids": [0, 1]}}}}
+{"ts": "2026-02-23T15:53:35.426830+00:00", "event": "mcp_call_success", "payload": {"tool": "create_slices", "result": {"result": {"status": "success", "accepted": true, "config_echo": {"slice_sched_algo": "STATIC", "slices": [{"id": 0, "label": "s1", "ue_sched_algo": "PF", "slice_algo_params": {"pos_low": 0, "pos_high": 2}}, {"id": 1, "label": "s2", "ue_sched_algo": "PF", "slice_algo_params": {"pos_low": 3, "pos_high": 4}}]}}}}}
+{"ts": "2026-02-23T15:53:35.427122+00:00", "event": "mcp_call_start", "payload": {"tool": "create_slices", "args": {"config": {"slice_sched_algo": "STATIC", "num_slices": 1, "slice_ids": [0]}}}}
+{"ts": "2026-02-23T15:53:35.427194+00:00", "event": "mcp_call_blocked", "payload": {"tool": "create_slices", "guardrail": {"ok": false, "errors": ["config.slices[0].label must be a non-empty string", "config.slices[0].slice_algo_params.pos_low must be <= pos_high"], "warnings": []}}}
+{"ts": "2026-02-23T15:53:35.427319+00:00", "event": "mcp_call_start", "payload": {"tool": "create_slices", "args": {"config": {"slice_sched_algo": "STATIC", "num_slices": 1, "slice_ids": [0]}}}}
+{"ts": "2026-02-23T15:53:35.427388+00:00", "event": "mcp_call_success", "payload": {"tool": "create_slices", "result": {"result": {"status": "success", "accepted": true, "config_echo": {"slice_sched_algo": "STATIC", "slices": [{"id": 0, "label": "s1", "ue_sched_algo": "PF", "slice_algo_params": {"pos_low": 0, "pos_high": 2}}]}}}}}

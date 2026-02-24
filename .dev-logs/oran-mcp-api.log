@@ -1,0 +1,712 @@
+INFO:     Will watch for changes in these directories: ['/home/dang/agent_test/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     Started reloader process [498921] using WatchFiles
+INFO:     Started server process [498962]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:36970 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36970 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36970 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36982 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41952 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41952 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [498962]
+INFO:     Started server process [507753]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [507753]
+INFO:     Stopping reloader process [498921]
+INFO:     Will watch for changes in these directories: ['/home/dang/agent_test/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     Started reloader process [510146] using WatchFiles
+INFO:     Started server process [510168]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:45376 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45376 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45376 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45390 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45390 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45390 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45376 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45376 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [510168]
+INFO:     Started server process [520155]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [520155]
+INFO:     Started server process [521299]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:44502 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44514 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44514 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [521299]
+INFO:     Started server process [521810]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:45192 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45200 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45200 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45200 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45192 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45192 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45192 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45200 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45200 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45200 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45192 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45192 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50826 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50842 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50842 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44592 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44608 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44608 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [521810]
+INFO:     Started server process [752876]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:51522 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51522 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51522 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54590 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54590 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [752876]
+INFO:     Stopping reloader process [510146]
+INFO:     Will watch for changes in these directories: ['/home/dang/agent_test/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     Started reloader process [819741] using WatchFiles
+INFO:     Started server process [819762]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:50598 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50598 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50598 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56418 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56418 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56424 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56424 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56424 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [819762]
+INFO:     Stopping reloader process [819741]
+INFO:     Will watch for changes in these directories: ['/home/dang/agent_test/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     Started reloader process [875413] using WatchFiles
+INFO:     Started server process [875450]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:55046 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55046 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55046 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58608 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58608 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58622 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58622 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58622 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'utm_agent/service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [875450]
+INFO:     Started server process [923014]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'utm_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [923014]
+INFO:     Started server process [923549]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [923549]
+INFO:     Started server process [924011]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:37236 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37244 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37244 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51234 - "OPTIONS /api/mcp/profile HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:51234 - "OPTIONS /api/mcp/profile HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:51234 - "OPTIONS /api/mcp/profile HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:45456 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45470 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40450 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40458 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40458 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'agent_db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [924011]
+INFO:     Started server process [971263]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/simulator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [971263]
+INFO:     Started server process [971927]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:58858 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58872 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58872 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'utm_agent/service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [971927]
+INFO:     Started server process [972443]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:58874 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58880 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58880 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'network_agent/service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [972443]
+INFO:     Started server process [973107]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'utm_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [973107]
+INFO:     Started server process [974519]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'utm_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [974519]
+INFO:     Started server process [975065]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'network_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [975065]
+INFO:     Started server process [975604]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [975604]
+INFO:     Started server process [978077]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [978077]
+INFO:     Stopping reloader process [875413]
+INFO:     Will watch for changes in these directories: ['/home/dang/agent_test/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     Started reloader process [983922] using WatchFiles
+INFO:     Started server process [983974]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:41486 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41486 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41486 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'network_agent/service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [983974]
+INFO:     Started server process [990456]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:41402 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41402 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41402 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41406 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41762 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41762 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [990456]
+INFO:     Started server process [1002434]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1002434]
+INFO:     Started server process [1002823]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'network_agent/service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1002823]
+INFO:     Started server process [1011405]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1011405]
+INFO:     Started server process [1049995]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1049995]
+INFO:     Started server process [1050963]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/simulator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1050963]
+INFO:     Started server process [1069217]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1069217]
+INFO:     Started server process [1069471]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1069471]
+INFO:     Started server process [1069987]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:35196 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35206 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35206 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1069987]
+INFO:     Started server process [1102899]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1102899]
+INFO:     Started server process [1103333]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1103333]
+INFO:     Started server process [1103477]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:47776 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47776 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47776 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1103477]
+INFO:     Started server process [1112578]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1112578]
+INFO:     Started server process [1113305]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1113305]
+INFO:     Started server process [1113809]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/tools.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1113809]
+INFO:     Started server process [1121036]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1121036]
+INFO:     Started server process [1128087]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:46316 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46316 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46316 - "GET /api/mcp/config HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1128087]
+INFO:     Started server process [1158595]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1158595]
+INFO:     Started server process [1180526]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1180526]
+INFO:     Started server process [1184083]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1184083]
+INFO:     Started server process [1185703]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1185703]
+INFO:     Started server process [1189962]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1189962]
+INFO:     Started server process [1190711]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1190711]
+INFO:     Started server process [1190973]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1190973]
+INFO:     Started server process [1196316]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1196316]
+INFO:     Started server process [1199900]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1199900]
+INFO:     Started server process [1200816]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'uav_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1200816]
+INFO:     Started server process [1200941]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:47610 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47616 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47616 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1200941]
+INFO:     Stopping reloader process [983922]
+INFO:     Will watch for changes in these directories: ['/home/dang/agent_test/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     Started reloader process [1209911] using WatchFiles
+INFO:     Started server process [1209979]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/runtime.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1209979]
+INFO:     Started server process [1248813]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1248813]
+INFO:     Started server process [1249566]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/state.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1249566]
+INFO:     Started server process [1254030]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/runtime.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1254030]
+INFO:     Started server process [1255008]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/runtime.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1255008]
+INFO:     Started server process [1255221]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/watchers.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1255221]
+INFO:     Started server process [1260597]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1260597]
+INFO:     Started server process [1260928]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/planner.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1260928]
+INFO:     Started server process [1266260]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1266260]
+INFO:     Started server process [1266550]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/planner.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1266550]
+INFO:     Started server process [1267810]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/policy.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1267810]
+INFO:     Started server process [1272821]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1272821]
+INFO:     Started server process [1273761]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/domain_dispatch.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1273761]
+INFO:     Started server process [1277625]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/domain_dispatch.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1277625]
+INFO:     Started server process [1277912]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/policy.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1277912]
+INFO:     Started server process [1278214]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/graph.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1278214]
+INFO:     Started server process [1278464]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/state.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1278464]
+INFO:     Started server process [1278800]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/policy.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1278800]
+INFO:     Started server process [1282914]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/command_types.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1282914]
+INFO:     Started server process [1287287]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/domain_dispatch.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1287287]
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/policy.py'. Reloading...
+INFO:     Started server process [1287744]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Started server process [1287862]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'test/test_mission_supervisor_policy.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1287862]
+INFO:     Started server process [1291015]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'test/test_mission_supervisor_planner.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1291015]
+INFO:     Started server process [1293342]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mission_supervisor_agent/api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1293342]
+INFO:     Started server process [1316091]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1316091]
+INFO:     Stopping reloader process [1209911]
+INFO:     Will watch for changes in these directories: ['/home/dang/agent_test/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     Started reloader process [1341962] using WatchFiles
+INFO:     Started server process [1341991]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:58718 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58718 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58718 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58718 - "GET /api/mcp/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58726 - "GET /api/mcp/config HTTP/1.1" 200 OK

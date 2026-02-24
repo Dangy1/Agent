@@ -1,0 +1,222 @@
+"""Mission supervisor runtime API for mission lifecycle control and state inspection."""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+try:
+    from fastapi import FastAPI, HTTPException
+    from fastapi.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel, Field
+except Exception as e:  # pragma: no cover
+    raise RuntimeError("mission_supervisor_agent.api requires fastapi and pydantic") from e
+
+from .runtime import MISSION_RUNTIME
+
+
+class MissionStartPayload(BaseModel):
+    request_text: str = Field(..., min_length=1)
+    mission_id: Optional[str] = None
+    initial_state: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class MissionStopPayload(BaseModel):
+    mission_id: str
+    reason: str = "operator_request"
+
+
+class MissionTestsRunPayload(BaseModel):
+    timeout_sec: int = Field(default=120, ge=5, le=1800)
+
+
+app = FastAPI(title="Mission Supervisor API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:5174",
+        "http://127.0.0.1:5175",
+        "http://localhost:5175",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_TEST_SCRIPT_PATH = _REPO_ROOT / "backend" / "test" / "run_mission_supervisor_regressions.sh"
+_TEST_LATEST_KEY = "mission_supervisor:tests:latest"
+_TEST_LINE_RE = re.compile(
+    r"^(?P<name>test[^\s]+)\s+\([^)]+\)\s+\.\.\.\s+(?P<status>ok|FAIL|ERROR|skipped.*)$"
+)
+_RAN_RE = re.compile(r"^Ran\s+(?P<total>\d+)\s+tests?\s+in\s+(?P<secs>[0-9.]+)s$", re.IGNORECASE)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_test_status(raw: str) -> str:
+    token = raw.strip().lower()
+    if token == "ok":
+        return "passed"
+    if token.startswith("skip"):
+        return "skipped"
+    if token == "fail":
+        return "failed"
+    if token == "error":
+        return "error"
+    return token
+
+
+def _parse_unittest_output(raw_log: str, returncode: int) -> Dict[str, Any]:
+    tests: list[Dict[str, Any]] = []
+    total: Optional[int] = None
+    duration_sec: Optional[float] = None
+
+    for raw_line in raw_log.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        m = _TEST_LINE_RE.match(line)
+        if m:
+            tests.append(
+                {
+                    "name": m.group("name"),
+                    "status": _normalize_test_status(m.group("status")),
+                }
+            )
+            continue
+        ran = _RAN_RE.match(line)
+        if ran:
+            total = int(ran.group("total"))
+            duration_sec = float(ran.group("secs"))
+
+    if total is None:
+        total = len(tests)
+    passed = sum(1 for t in tests if str(t.get("status")) == "passed")
+    failed = sum(1 for t in tests if str(t.get("status")) in {"failed", "error"})
+    skipped = sum(1 for t in tests if str(t.get("status")) == "skipped")
+    ok = returncode == 0 and failed == 0
+
+    result: Dict[str, Any] = {
+        "suite": "mission_supervisor_regressions",
+        "ran_at": _utc_now(),
+        "ok": ok,
+        "total": total,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "tests": tests,
+        "raw_log": raw_log,
+        "exit_code": returncode,
+    }
+    if duration_sec is not None:
+        result["duration_sec"] = duration_sec
+    return result
+
+
+def _mission_db():
+    return MISSION_RUNTIME.db
+
+
+@app.post("/api/mission/start")
+def post_mission_start(payload: MissionStartPayload) -> Dict[str, Any]:
+    try:
+        snapshot = MISSION_RUNTIME.start_mission(
+            request_text=payload.request_text,
+            mission_id=payload.mission_id,
+            initial_state=payload.initial_state,
+            metadata=payload.metadata,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"status": "success", "result": snapshot}
+
+
+@app.post("/api/mission/stop")
+def post_mission_stop(payload: MissionStopPayload) -> Dict[str, Any]:
+    try:
+        snapshot = MISSION_RUNTIME.stop_mission(payload.mission_id, reason=payload.reason)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"mission not found: {payload.mission_id}") from None
+    return {"status": "success", "result": snapshot}
+
+
+@app.get("/api/mission/{mission_id}/state")
+def get_mission_state(mission_id: str) -> Dict[str, Any]:
+    try:
+        snapshot = MISSION_RUNTIME.get_mission_state(mission_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"mission not found: {mission_id}") from None
+    return {"status": "success", "result": snapshot}
+
+
+@app.get("/api/mission/{mission_id}/events")
+def get_mission_events(mission_id: str, limit: int = 100) -> Dict[str, Any]:
+    try:
+        events = MISSION_RUNTIME.get_mission_events(mission_id, limit=limit)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"mission not found: {mission_id}") from None
+    return {"status": "success", "result": {"mission_id": mission_id, "events": events}}
+
+
+@app.get("/api/mission")
+def list_missions(limit: int = 50) -> Dict[str, Any]:
+    return {"status": "success", "result": {"missions": MISSION_RUNTIME.list_missions(limit=limit)}}
+
+
+@app.post("/api/mission/tests/run")
+def post_mission_tests_run(payload: MissionTestsRunPayload | None = None) -> Dict[str, Any]:
+    if not _TEST_SCRIPT_PATH.exists():
+        raise HTTPException(status_code=500, detail=f"test script not found: {_TEST_SCRIPT_PATH}")
+
+    timeout_sec = int((payload.timeout_sec if payload else 120))
+    env = dict(os.environ)
+    try:
+        proc = subprocess.run(
+            ["bash", str(_TEST_SCRIPT_PATH)],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            env=env,
+        )
+        raw_log = (proc.stdout or "") + (("\n" if proc.stdout and proc.stderr else "") + (proc.stderr or ""))
+        result = _parse_unittest_output(raw_log, proc.returncode)
+    except subprocess.TimeoutExpired as e:
+        partial = ((e.stdout or "") if isinstance(e.stdout, str) else "") + ("\n" if e.stdout and e.stderr else "") + (
+            (e.stderr or "") if isinstance(e.stderr, str) else ""
+        )
+        result = {
+            "suite": "mission_supervisor_regressions",
+            "ran_at": _utc_now(),
+            "ok": False,
+            "total": 0,
+            "passed": 0,
+            "failed": 1,
+            "tests": [],
+            "raw_log": (partial + ("\n" if partial else "") + f"Timed out after {timeout_sec}s").strip(),
+            "exit_code": None,
+            "error": f"timeout after {timeout_sec}s",
+        }
+
+    db = _mission_db()
+    sync = db.record_action("mission_tests_run", payload={"timeout_sec": timeout_sec}, result=result, entity_id="mission-tests")
+    db.set_state(_TEST_LATEST_KEY, result)
+    return {"status": "success", "result": result, "sync": sync}
+
+
+@app.get("/api/mission/tests/latest")
+def get_mission_tests_latest() -> Dict[str, Any]:
+    db = _mission_db()
+    latest = db.get_state(_TEST_LATEST_KEY)
+    return {"status": "success", "result": latest, "sync": db.get_sync()}

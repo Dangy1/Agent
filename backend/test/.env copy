@@ -1,0 +1,41 @@
+FLEXRIC_DB_DIR=/tmp
+FLEXRIC_DB_PREFIX=xapp_db_
+FLEXRIC_RPC_TITLE=FlexRIC xApp RPC
+
+# =========================
+# xapp_rpc_server settings
+# =========================
+
+# Comma-separated allowlist of E2 node IDs.
+# Leave empty to disable allowlist.
+E2_NODE_ALLOWLIST=
+
+# Simple rate limit (requests per second).
+# 0 disables rate limiting.
+RATE_LIMIT_RPS=0
+
+# Dry-run mode: 1/true/yes to NOT execute control actions (returns dry_run=true)
+DRY_RUN=0
+
+# PRB bounds check for static slice control
+PRB_MAX_LOW=0
+PRB_MAX_HIGH=273
+
+# Audit log file path
+AUDIT_LOG_PATH=/tmp/xapp_rpc_audit.log
+
+
+# =========================
+# (Optional) FastAPI/Uvicorn
+# =========================
+# Not used by the code directly, but convenient if you wrap uvicorn in a script.
+HOST=127.0.0.1
+PORT=8088
+
+MCP_HOST=127.0.0.1
+MCP_PORT=8000
+MCP_PATH=/mcp
+
+FLEXRIC_NODE_INDEX=0
+FLEXRIC_ENABLE=mac,rlc,pdcp,gtp,slice
+FLEXRIC_INTERVAL=10

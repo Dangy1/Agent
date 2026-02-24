@@ -1,0 +1,13 @@
+{
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "agent": "oran_agent.graph:agent",
+    "oran_agent": "oran_agent.graph:agent",
+    "network_agent": "network_agent.graph:agent",
+    "uav_agent": "uav_agent.graph:agent",
+    "utm_agent": "utm_agent.graph:agent",
+    "mission_supervisor": "mission_supervisor_agent.graph:agent"
+  }
+}

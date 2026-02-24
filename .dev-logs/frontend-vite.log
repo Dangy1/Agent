@@ -1,0 +1,159 @@
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 190 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+  ➜  Network: http://10.0.0.2:5173/
+11:33:50 AM [vite] (client) hmr update /src/UavPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 223 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+  ➜  Network: http://10.0.0.2:5173/
+11:39:02 AM [vite] (client) hmr update /src/UavPage.tsx
+11:39:40 AM [vite] (client) hmr update /src/UtmPage.tsx
+1:08:16 PM [vite] (client) hmr update /src/UavPage.tsx
+1:08:27 PM [vite] (client) hmr update /src/UavPage.tsx
+1:30:19 PM [vite] (client) hmr update /src/UtmPage.tsx
+1:30:59 PM [vite] (client) hmr update /src/UavPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 225 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+  ➜  Network: http://10.0.0.2:5173/
+1:41:00 PM [vite] (client) hmr update /src/App.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 213 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+  ➜  Network: http://10.0.0.2:5173/
+1:59:23 PM [vite] (client) hmr update /src/UavPage.tsx
+1:59:51 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:00:06 PM [vite] (client) hmr update /src/NetworkPage.tsx
+2:03:44 PM [vite] (client) hmr update /src/UavPage.tsx
+2:04:17 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:04:26 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:04:36 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:04:57 PM [vite] (client) hmr update /src/NetworkPage.tsx
+2:11:21 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+2:11:44 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:11:50 PM [vite] (client) hmr update /src/UavPage.tsx
+2:12:27 PM [vite] (client) hmr update /src/UavPage.tsx
+2:13:04 PM [vite] (client) hmr update /src/NetworkPage.tsx
+2:20:25 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:24:47 PM [vite] (client) hmr update /src/UavPage.tsx
+2:31:36 PM [vite] (client) hmr update /src/UavPage.tsx
+2:31:52 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:32:08 PM [vite] (client) hmr update /src/NetworkPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 315 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+  ➜  Network: http://10.0.0.2:5173/
+2:35:45 PM [vite] (client) hmr update /src/NetworkPage.tsx
+2:40:18 PM [vite] (client) hmr update /src/UavPage.tsx
+2:43:15 PM [vite] (client) hmr update /src/UavPage.tsx
+2:44:58 PM [vite] (client) hmr update /src/UavPage.tsx
+2:50:28 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:52:58 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:54:30 PM [vite] (client) hmr update /src/UavPage.tsx
+2:59:35 PM [vite] (client) hmr update /src/UavPage.tsx
+3:06:23 PM [vite] (client) hmr update /src/UavPage.tsx
+3:06:26 PM [vite] (client) hmr update /src/UavPage.tsx
+3:06:36 PM [vite] (client) hmr update /src/UavPage.tsx
+3:06:40 PM [vite] (client) hmr update /src/UavPage.tsx
+3:06:57 PM [vite] (client) hmr update /src/UavPage.tsx
+3:07:02 PM [vite] (client) hmr update /src/UavPage.tsx
+3:07:07 PM [vite] (client) hmr update /src/UavPage.tsx
+3:07:29 PM [vite] (client) hmr update /src/UavPage.tsx
+3:07:39 PM [vite] (client) hmr update /src/UavPage.tsx
+3:10:14 PM [vite] (client) hmr update /src/UavPage.tsx
+3:10:19 PM [vite] (client) hmr update /src/UtmPage.tsx
+3:10:26 PM [vite] (client) hmr update /src/NetworkPage.tsx
+3:12:50 PM [vite] (client) hmr update /src/UavPage.tsx
+3:22:08 PM [vite] (client) hmr update /src/UavPage.tsx
+3:24:47 PM [vite] (client) hmr update /src/UavPage.tsx
+3:24:47 PM [vite] (client) warning: Duplicate key "route_id" in object literal
+557 |            prompt: agentPrompt,
+558 |            route_id: simRouteId,
+559 |            route_id: normalizeRouteIdBase(simRouteId),
+    |            ^
+560 |            waypoints: routeValidation.waypoints,
+561 |            optimization_profile: agentOptimizationProfile,
+
+  Plugin: vite:esbuild
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx
+3:25:03 PM [vite] (client) hmr update /src/UavPage.tsx
+3:28:11 PM [vite] (client) hmr update /src/UavPage.tsx
+3:28:16 PM [vite] (client) hmr update /src/UavPage.tsx
+3:28:26 PM [vite] (client) hmr update /src/UavPage.tsx
+3:29:03 PM [vite] (client) hmr update /src/UavPage.tsx
+3:29:26 PM [vite] (client) hmr update /src/UavPage.tsx
+3:30:20 PM [vite] (client) hmr update /src/UavPage.tsx
+3:30:32 PM [vite] (client) hmr update /src/UavPage.tsx
+3:30:41 PM [vite] (client) hmr update /src/UavPage.tsx
+3:30:59 PM [vite] (client) hmr update /src/UavPage.tsx
+3:35:29 PM [vite] (client) hmr update /src/UavPage.tsx
+3:35:44 PM [vite] (client) hmr update /src/UavPage.tsx
+3:35:53 PM [vite] (client) hmr update /src/UavPage.tsx
+3:36:13 PM [vite] (client) hmr update /src/UavPage.tsx
+3:37:42 PM [vite] (client) hmr update /src/UavPage.tsx
+3:38:06 PM [vite] (client) hmr update /src/UavPage.tsx
+3:38:57 PM [vite] (client) hmr update /src/UavPage.tsx
+3:39:05 PM [vite] (client) hmr update /src/UavPage.tsx
+3:39:11 PM [vite] (client) hmr update /src/UavPage.tsx
+3:39:42 PM [vite] (client) hmr update /src/UavPage.tsx
+3:41:25 PM [vite] (client) hmr update /src/UavPage.tsx
+3:42:44 PM [vite] (client) hmr update /src/UavPage.tsx
+3:56:33 PM [vite] (client) hmr update /src/UavPage.tsx
+3:56:45 PM [vite] (client) hmr update /src/UavPage.tsx
+3:56:51 PM [vite] (client) hmr update /src/UavPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 129 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 122 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/

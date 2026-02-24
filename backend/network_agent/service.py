@@ -1,0 +1,397 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import math
+import os
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any, Dict, List
+
+from uav_agent.simulator import SIM
+from utm_agent.service import UTM_SERVICE
+
+
+def _clamp(v: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, v))
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * t
+
+
+def _dist2d(a: Dict[str, float], b: Dict[str, float]) -> float:
+    dx = float(a["x"]) - float(b["x"])
+    dy = float(a["y"]) - float(b["y"])
+    return math.hypot(dx, dy)
+
+
+UAV_AGENT_BASE_URL = os.getenv("UAV_AGENT_BASE_URL", "http://127.0.0.1:8020").rstrip("/")
+UTM_AGENT_BASE_URL = os.getenv("UTM_AGENT_BASE_URL", "http://127.0.0.1:8021").rstrip("/")
+
+
+def _http_get_json(url: str, timeout_s: float = 0.8) -> Dict[str, Any] | None:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+            raw = resp.read()
+        import json
+
+        data = json.loads(raw.decode("utf-8"))
+        return data if isinstance(data, dict) else None
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError):
+        return None
+
+
+@dataclass
+class BaseStation:
+    id: str
+    x: float
+    y: float
+    band: str
+    freq_mhz: float
+    bandwidth_mhz: float
+    tx_power_dbm: float
+    height_m: float
+    tilt_deg: float
+    load_pct: float
+    status: str = "online"
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "x": self.x,
+            "y": self.y,
+            "band": self.band,
+            "freqMHz": self.freq_mhz,
+            "bandwidthMHz": self.bandwidth_mhz,
+            "txPowerDbm": round(self.tx_power_dbm, 1),
+            "heightM": round(self.height_m, 1),
+            "tiltDeg": round(self.tilt_deg, 1),
+            "loadPct": round(self.load_pct, 1),
+            "status": self.status,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "BaseStation":
+        return cls(
+            id=str(data.get("id", "BS")),
+            x=float(data.get("x", 0.0)),
+            y=float(data.get("y", 0.0)),
+            band=str(data.get("band", "n78")),
+            freq_mhz=float(data.get("freqMHz", data.get("freq_mhz", 3500.0))),
+            bandwidth_mhz=float(data.get("bandwidthMHz", data.get("bandwidth_mhz", 100.0))),
+            tx_power_dbm=float(data.get("txPowerDbm", data.get("tx_power_dbm", 35.0))),
+            height_m=float(data.get("heightM", data.get("height_m", 30.0))),
+            tilt_deg=float(data.get("tiltDeg", data.get("tilt_deg", 6.0))),
+            load_pct=float(data.get("loadPct", data.get("load_pct", 50.0))),
+            status=str(data.get("status", "online")),
+        )
+
+
+@dataclass
+class TrackedUav:
+    uav_id: str
+    mission: str
+    route: List[Dict[str, float]]
+    route_index: int = 0
+    t: float = 0.0
+    speed_mps: float = 12.0
+    qos_class: str = "telemetry"
+
+    def current_position(self) -> Dict[str, float]:
+        if not self.route:
+            return {"x": 0.0, "y": 0.0, "z": 0.0}
+        a = self.route[self.route_index % len(self.route)]
+        b = self.route[(self.route_index + 1) % len(self.route)]
+        return {
+            "x": _lerp(float(a["x"]), float(b["x"]), self.t),
+            "y": _lerp(float(a["y"]), float(b["y"]), self.t),
+            "z": _lerp(float(a["z"]), float(b["z"]), self.t),
+        }
+
+    def step(self, amount: float = 0.04) -> None:
+        if len(self.route) < 2:
+            return
+        self.t += amount * _clamp(self.speed_mps / 15.0, 0.6, 1.4)
+        while self.t >= 1.0:
+            self.t -= 1.0
+            self.route_index = (self.route_index + 1) % len(self.route)
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.uav_id,
+            "mission": self.mission,
+            "route": [dict(p) for p in self.route],
+            "routeIndex": self.route_index,
+            "t": round(self.t, 4),
+            "speedMps": round(self.speed_mps, 2),
+            "qosClass": self.qos_class,
+            "position": self.current_position(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TrackedUav":
+        route_raw = data.get("route")
+        route = [dict(p) for p in route_raw] if isinstance(route_raw, list) else []
+        return cls(
+            uav_id=str(data.get("id", data.get("uav_id", "uav"))),
+            mission=str(data.get("mission", "mission")),
+            route=route,  # type: ignore[arg-type]
+            route_index=int(data.get("routeIndex", data.get("route_index", 0)) or 0),
+            t=float(data.get("t", 0.0) or 0.0),
+            speed_mps=float(data.get("speedMps", data.get("speed_mps", 12.0)) or 12.0),
+            qos_class=str(data.get("qosClass", data.get("qos_class", "telemetry"))),
+        )
+
+
+@dataclass
+class NetworkMissionService:
+    base_stations: List[BaseStation] = field(
+        default_factory=lambda: [
+            BaseStation("BS-A", 60, 55, "n78", 3500, 100, 39, 32, 6, 62, "online"),
+            BaseStation("BS-B", 205, 48, "n78", 3500, 80, 37, 28, 5, 74, "degraded"),
+            BaseStation("BS-C", 330, 95, "n41", 2600, 60, 36, 24, 4, 48, "online"),
+            BaseStation("BS-D", 110, 210, "n28", 700, 20, 43, 36, 7, 41, "online"),
+            BaseStation("BS-E", 290, 225, "n78", 3500, 100, 40, 34, 6, 69, "online"),
+        ]
+    )
+    tracked_uavs: Dict[str, TrackedUav] = field(default_factory=dict)
+    last_tick_ts: str = ""
+
+    def export_state(self) -> Dict[str, Any]:
+        return {
+            "base_stations": [b.as_dict() for b in self.base_stations],
+            "tracked_uavs": {uid: rec.as_dict() for uid, rec in self.tracked_uavs.items()},
+            "last_tick_ts": self.last_tick_ts,
+        }
+
+    def load_state(self, state: Dict[str, Any] | None) -> None:
+        if not isinstance(state, dict):
+            return
+        bs_rows = state.get("base_stations")
+        if isinstance(bs_rows, list):
+            parsed = [BaseStation.from_dict(r) for r in bs_rows if isinstance(r, dict)]
+            if parsed:
+                self.base_stations = parsed
+        tracked_rows = state.get("tracked_uavs")
+        if isinstance(tracked_rows, dict):
+            parsed_uavs: Dict[str, TrackedUav] = {}
+            for uid, row in tracked_rows.items():
+                if not isinstance(row, dict):
+                    continue
+                rec = TrackedUav.from_dict(row)
+                parsed_uavs[str(uid)] = rec
+            if parsed_uavs:
+                self.tracked_uavs = parsed_uavs
+        if isinstance(state.get("last_tick_ts"), str):
+            self.last_tick_ts = str(state["last_tick_ts"])
+
+    def _coverage_radius(self, bs: BaseStation) -> float:
+        low_boost = 55 if bs.freq_mhz < 1000 else 35 if bs.freq_mhz < 3000 else 18
+        return _clamp(45 + (bs.tx_power_dbm - 34) * 5 + bs.bandwidth_mhz * 0.18 + low_boost - bs.load_pct * 0.12, 36, 160)
+
+    def _signal_at(self, bs: BaseStation, pos: Dict[str, float]) -> float:
+        d2d = max(2.0, _dist2d({"x": bs.x, "y": bs.y}, pos))
+        d3d = math.sqrt(d2d * d2d + max(1.0, bs.height_m - float(pos["z"])) ** 2)
+        path_loss = 32.4 + 20 * math.log10(d3d / 100.0) + 20 * math.log10(max(700.0, bs.freq_mhz) / 1000.0)
+        load_penalty = bs.load_pct * 0.07
+        tilt_penalty = abs(bs.tilt_deg - 6.0) * 0.4
+        return bs.tx_power_dbm - path_loss - load_penalty - tilt_penalty + 28.0
+
+    def _fetch_remote_uav_fleet(self) -> Dict[str, Dict[str, Any]] | None:
+        data = _http_get_json(f"{UAV_AGENT_BASE_URL}/api/uav/sim/fleet")
+        if not data or data.get("status") != "success":
+            return None
+        result = data.get("result")
+        if not isinstance(result, dict):
+            return None
+        fleet = result.get("fleet")
+        return fleet if isinstance(fleet, dict) else None
+
+    def _fetch_remote_utm_state(self, airspace_segment: str) -> Dict[str, Any] | None:
+        q = urllib.parse.urlencode({"airspace_segment": airspace_segment})
+        data = _http_get_json(f"{UTM_AGENT_BASE_URL}/api/utm/state?{q}")
+        if not data or data.get("status") != "success":
+            return None
+        result = data.get("result")
+        return result if isinstance(result, dict) else None
+
+    def _sync_tracked_uavs_from_sim(self) -> None:
+        fleet = self._fetch_remote_uav_fleet() or SIM.fleet_snapshot()
+        next_ids: set[str] = set()
+        for uav_id, snap in fleet.items():
+            if not isinstance(snap, dict):
+                continue
+            waypoints = snap.get("waypoints")
+            if not isinstance(waypoints, list) or len(waypoints) < 2:
+                continue
+            route: List[Dict[str, float]] = []
+            for wp in waypoints:
+                if not isinstance(wp, dict):
+                    continue
+                route.append(
+                    {
+                        "x": float(wp.get("x", 0.0)),
+                        "y": float(wp.get("y", 0.0)),
+                        "z": float(wp.get("z", 0.0)),
+                    }
+                )
+            if len(route) < 2:
+                continue
+            next_ids.add(str(uav_id))
+            rec = self.tracked_uavs.get(uav_id)
+            if rec is None:
+                rec = TrackedUav(uav_id=uav_id, mission="sim mission", route=route, qos_class="control", speed_mps=float(snap.get("velocity_mps", 12.0) or 12.0))
+                self.tracked_uavs[uav_id] = rec
+            rec.route = route
+            rec.speed_mps = float(snap.get("velocity_mps", rec.speed_mps) or rec.speed_mps)
+            if isinstance(snap.get("position"), dict):
+                pos = snap["position"]
+                try:
+                    px = float(pos.get("x", route[0]["x"]))  # type: ignore[union-attr]
+                    py = float(pos.get("y", route[0]["y"]))  # type: ignore[union-attr]
+                    pz = float(pos.get("z", route[0]["z"]))  # type: ignore[union-attr]
+                    # Use the simulator's reported position directly by replacing interpolation with a single-point progress near current waypoint.
+                    rec.route_index = int(snap.get("waypoint_index", rec.route_index) or 0) % len(route)
+                    rec.t = 0.0
+                    rec.route[rec.route_index] = {"x": px, "y": py, "z": pz}
+                except Exception:
+                    pass
+        # Keep only UAVs that currently exist in the simulator fleet to avoid stale synthetic tracks.
+        if isinstance(fleet, dict):
+            self.tracked_uavs = {uid: rec for uid, rec in self.tracked_uavs.items() if uid in next_ids}
+
+    def tick(self, steps: int = 1) -> Dict[str, Any]:
+        self._sync_tracked_uavs_from_sim()
+        # In "real testing" mode the UAV backend is the source of truth for motion.
+        # Network ticks refresh tracking/metrics timestamps only and should not move UAVs independently.
+        self.last_tick_ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return {"status": "success", "steps": max(1, int(steps)), "last_tick_ts": self.last_tick_ts}
+
+    def update_base_station(self, bs_id: str, **fields: Any) -> Dict[str, Any]:
+        for bs in self.base_stations:
+            if bs.id != bs_id:
+                continue
+            if "txPowerDbm" in fields:
+                bs.tx_power_dbm = _clamp(float(fields["txPowerDbm"]), 20.0, 50.0)
+            if "tiltDeg" in fields:
+                bs.tilt_deg = _clamp(float(fields["tiltDeg"]), 0.0, 15.0)
+            if "loadPct" in fields:
+                bs.load_pct = _clamp(float(fields["loadPct"]), 0.0, 100.0)
+            if "status" in fields and fields["status"] in {"online", "degraded", "maintenance"}:
+                bs.status = str(fields["status"])
+            return {"status": "success", "result": bs.as_dict()}
+        return {"status": "error", "error": "base_station_not_found", "bs_id": bs_id}
+
+    def apply_optimization(self, mode: str, coverage_target_pct: float = 96.0, max_tx_cap_dbm: float = 41.0, qos_priority_weight: float = 68.0) -> Dict[str, Any]:
+        max_cap = _clamp(float(max_tx_cap_dbm), 30.0, 46.0)
+        cov_target = _clamp(float(coverage_target_pct), 70.0, 100.0)
+        qos_w = _clamp(float(qos_priority_weight), 0.0, 100.0)
+        for bs in self.base_stations:
+            tx = bs.tx_power_dbm
+            load = bs.load_pct
+            tilt = bs.tilt_deg
+            if mode == "coverage":
+                tx = _clamp(tx + (1.2 if cov_target >= 95 else 0.4), 30.0, max_cap)
+                tilt = _clamp(tilt - 0.6, 2.0, 10.0)
+            elif mode == "power":
+                tx = _clamp(tx - 1.5, 30.0, max_cap)
+                load = _clamp(load - 2.0, 0.0, 100.0)
+            elif mode == "qos":
+                tx = _clamp(tx + (qos_w / 100.0) * 0.9, 30.0, max_cap)
+                load = _clamp(load - (qos_w / 100.0) * 1.8, 0.0, 100.0)
+                tilt = _clamp(tilt + 0.4, 2.0, 10.0)
+            else:
+                return {"status": "error", "error": "invalid_mode", "mode": mode}
+            bs.tx_power_dbm = round(tx, 1)
+            bs.load_pct = round(load, 1)
+            bs.tilt_deg = round(tilt, 1)
+        return {"status": "success", "result": {"mode": mode, "coverageTargetPct": cov_target, "maxTxCapDbm": max_cap, "qosPriorityWeight": qos_w}}
+
+    def _snapshot_for_uav(self, uav: TrackedUav) -> Dict[str, Any]:
+        pos = uav.current_position()
+        scored = [{"bs": bs, "rsrp": self._signal_at(bs, pos)} for bs in self.base_stations]
+        scored.sort(key=lambda r: r["rsrp"], reverse=True)
+        serving = scored[0] if scored else None
+        interferer = scored[1] if len(scored) > 1 else None
+        rsrp = float(serving["rsrp"]) if serving else -120.0
+        interferer_rsrp = float(interferer["rsrp"]) if interferer else -130.0
+        sinr = _clamp(rsrp - (interferer_rsrp + 3.0), -8.0, 35.0)
+        a = uav.route[uav.route_index % len(uav.route)] if uav.route else pos
+        b = uav.route[(uav.route_index + 1) % len(uav.route)] if len(uav.route) > 1 else pos
+        heading = (math.degrees(math.atan2(float(b["y"]) - float(a["y"]), float(b["x"]) - float(a["x"]))) + 360.0) % 360.0
+        latency = _clamp(14 + (12 if uav.qos_class == "video" else 4) + ((serving["bs"].load_pct if serving else 50.0) * 0.24) - sinr * 0.2, 8, 85)
+        packet_loss = _clamp((0.8 if uav.qos_class == "video" else 0.25) + ((6 - sinr) * 0.22 if sinr < 6 else 0.0) + (0.5 if interferer_rsrp > -82 else 0.0), 0.05, 9)
+        confidence = _clamp(98 - packet_loss * 4.2 - max(0.0, 20.0 - sinr) * 0.7, 62.0, 99.5)
+        risk = "high" if sinr < 6 else "medium" if sinr < 14 else "low"
+        return {
+            "id": uav.uav_id,
+            "mission": uav.mission,
+            "qosClass": uav.qos_class,
+            "x": round(float(pos["x"]), 2),
+            "y": round(float(pos["y"]), 2),
+            "z": round(float(pos["z"]), 2),
+            "headingDeg": round(heading, 1),
+            "speedMps": round(uav.speed_mps, 2),
+            "attachedBsId": serving["bs"].id if serving else "N/A",
+            "rsrpDbm": round(rsrp, 1),
+            "sinrDb": round(float(sinr), 1),
+            "latencyMs": round(float(latency), 1),
+            "packetLossPct": round(float(packet_loss), 2),
+            "trackingConfidencePct": round(float(confidence), 1),
+            "interferenceRisk": risk,
+        }
+
+    def get_state(self, airspace_segment: str = "sector-A3", selected_uav_id: str | None = None) -> Dict[str, Any]:
+        self._sync_tracked_uavs_from_sim()
+        tracked = list(self.tracked_uavs.values())
+        snapshots = [self._snapshot_for_uav(u) for u in tracked]
+        avg_sinr = sum(s["sinrDb"] for s in snapshots) / len(snapshots) if snapshots else 0.0
+        avg_latency = sum(s["latencyMs"] for s in snapshots) / len(snapshots) if snapshots else 0.0
+        high_risk = sum(1 for s in snapshots if s["interferenceRisk"] == "high")
+        coverage_score = _clamp(
+            93
+            + sum(1 for b in self.base_stations if self._coverage_radius(b) > 85) * 1.1
+            - sum(1 for b in self.base_stations if b.status != "online") * 2.4
+            - high_risk * 1.8,
+            72,
+            99,
+        )
+        utm_health = _clamp(99 - high_risk * 6 - max(0.0, 12.0 - avg_sinr) * 1.2, 70, 99.4)
+        selected = next((s for s in snapshots if s["id"] == selected_uav_id), None)
+        if selected is None and snapshots:
+            selected = snapshots[0]
+        remote_utm = self._fetch_remote_utm_state(airspace_segment)
+        utm_payload = remote_utm or {
+            "weather": UTM_SERVICE.get_weather(airspace_segment),
+            "weatherChecks": UTM_SERVICE.check_weather(airspace_segment),
+            "noFlyZones": list(UTM_SERVICE.no_fly_zones),
+            "regulations": dict(UTM_SERVICE.regulations),
+            "licenses": dict(UTM_SERVICE.operator_licenses),
+        }
+        return {
+            "status": "success",
+            "result": {
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "lastTickTs": self.last_tick_ts,
+                "airspaceSegment": airspace_segment,
+                "baseStations": [b.as_dict() for b in self.base_stations],
+                "coverage": [{"bsId": b.id, "radiusM": round(self._coverage_radius(b), 1)} for b in self.base_stations],
+                "uavs": [u.as_dict() for u in tracked],
+                "trackingSnapshots": snapshots,
+                "selectedTracking": selected,
+                "networkKpis": {
+                    "coverageScorePct": round(float(coverage_score), 1),
+                    "avgSinrDb": round(float(avg_sinr), 1),
+                    "avgLatencyMs": round(float(avg_latency), 1),
+                    "highInterferenceRiskCount": high_risk,
+                    "utmTrackingHealthPct": round(float(utm_health), 1),
+                },
+                "utm": utm_payload,
+                "simFleet": self._fetch_remote_uav_fleet() or SIM.fleet_snapshot(),
+            },
+        }
+
+
+NETWORK_MISSION_SERVICE = NetworkMissionService()
