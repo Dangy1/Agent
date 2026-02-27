@@ -34,6 +34,10 @@ class NetworkBaseStationUpdatePayload(BaseModel):
     status: Optional[str] = None
 
 
+class NetworkTelemetryIngestPayload(BaseModel):
+    payload: Dict[str, Any]
+
+
 app = FastAPI(title="Network Mission API")
 app.add_middleware(
     CORSMiddleware,
@@ -86,6 +90,20 @@ def get_network_sync(limit_actions: int = 5) -> Dict[str, Any]:
             "recentActions": NETWORK_DB.recent_actions(limit_actions),
         },
     }
+
+
+@app.get("/api/network/telemetry/source")
+def get_network_telemetry_source() -> Dict[str, Any]:
+    return {"status": "success", "result": NETWORK_MISSION_SERVICE.traffic_source_config()}
+
+
+@app.post("/api/network/telemetry/ingest")
+def post_network_telemetry_ingest(payload: NetworkTelemetryIngestPayload) -> Dict[str, Any]:
+    result = NETWORK_MISSION_SERVICE.ingest_live_telemetry(payload.payload)
+    sync = _log_network_action("telemetry_ingest", payload={"hasPayload": True}, result=result)
+    if isinstance(result, dict):
+        result["sync"] = sync
+    return result
 
 
 @app.post("/api/network/mission/tick")

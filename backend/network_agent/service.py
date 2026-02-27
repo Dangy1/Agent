@@ -29,6 +29,8 @@ def _dist2d(a: Dict[str, float], b: Dict[str, float]) -> float:
 
 UAV_AGENT_BASE_URL = os.getenv("UAV_AGENT_BASE_URL", "http://127.0.0.1:8020").rstrip("/")
 UTM_AGENT_BASE_URL = os.getenv("UTM_AGENT_BASE_URL", "http://127.0.0.1:8021").rstrip("/")
+NETWORK_TRAFFIC_MODE = os.getenv("NETWORK_TRAFFIC_MODE", "sim").strip().lower() or "sim"
+NETWORK_TELEMETRY_SOURCE_URL = os.getenv("NETWORK_TELEMETRY_SOURCE_URL", "").strip()
 
 
 def _http_get_json(url: str, timeout_s: float = 0.8) -> Dict[str, Any] | None:
@@ -158,12 +160,14 @@ class NetworkMissionService:
     )
     tracked_uavs: Dict[str, TrackedUav] = field(default_factory=dict)
     last_tick_ts: str = ""
+    latest_live_telemetry: Dict[str, Any] | None = None
 
     def export_state(self) -> Dict[str, Any]:
         return {
             "base_stations": [b.as_dict() for b in self.base_stations],
             "tracked_uavs": {uid: rec.as_dict() for uid, rec in self.tracked_uavs.items()},
             "last_tick_ts": self.last_tick_ts,
+            "latest_live_telemetry": self.latest_live_telemetry,
         }
 
     def load_state(self, state: Dict[str, Any] | None) -> None:
@@ -186,6 +190,28 @@ class NetworkMissionService:
                 self.tracked_uavs = parsed_uavs
         if isinstance(state.get("last_tick_ts"), str):
             self.last_tick_ts = str(state["last_tick_ts"])
+        if isinstance(state.get("latest_live_telemetry"), dict):
+            self.latest_live_telemetry = dict(state["latest_live_telemetry"])
+
+    def traffic_mode(self) -> str:
+        mode = NETWORK_TRAFFIC_MODE
+        return mode if mode in {"sim", "real", "auto"} else "sim"
+
+    def traffic_source_config(self) -> Dict[str, Any]:
+        return {
+            "mode": self.traffic_mode(),
+            "pullUrl": NETWORK_TELEMETRY_SOURCE_URL or None,
+            "hasPushedTelemetry": isinstance(self.latest_live_telemetry, dict),
+        }
+
+    def ingest_live_telemetry(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        normalized = self._normalize_live_telemetry(payload)
+        if not normalized:
+            return {"status": "error", "error": "invalid_live_telemetry_payload"}
+        normalized["receivedAt"] = now
+        self.latest_live_telemetry = normalized
+        return {"status": "success", "result": {"receivedAt": now, "source": normalized.get("source", "push"), "trafficMode": self.traffic_mode()}}
 
     def _coverage_radius(self, bs: BaseStation) -> float:
         low_boost = 55 if bs.freq_mhz < 1000 else 35 if bs.freq_mhz < 3000 else 18
@@ -261,6 +287,77 @@ class NetworkMissionService:
         # Keep only UAVs that currently exist in the simulator fleet to avoid stale synthetic tracks.
         if isinstance(fleet, dict):
             self.tracked_uavs = {uid: rec for uid, rec in self.tracked_uavs.items() if uid in next_ids}
+
+    def _fetch_external_live_telemetry(self) -> Dict[str, Any] | None:
+        if not NETWORK_TELEMETRY_SOURCE_URL:
+            return None
+        data = _http_get_json(NETWORK_TELEMETRY_SOURCE_URL, timeout_s=1.2)
+        if not isinstance(data, dict):
+            return None
+        candidate = data.get("result") if isinstance(data.get("result"), dict) else data
+        return self._normalize_live_telemetry(candidate if isinstance(candidate, dict) else {})
+
+    def _normalize_live_telemetry(self, payload: Dict[str, Any]) -> Dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        snapshots_raw = payload.get("trackingSnapshots")
+        kpis_raw = payload.get("networkKpis")
+        if not isinstance(snapshots_raw, list) or not isinstance(kpis_raw, dict):
+            # Accept flatter payloads from custom exporters.
+            snapshots_raw = payload.get("snapshots", snapshots_raw)
+            kpis_raw = payload.get("kpis", kpis_raw)
+        if not isinstance(snapshots_raw, list) or not isinstance(kpis_raw, dict):
+            return None
+        snapshots: List[Dict[str, Any]] = []
+        for row in snapshots_raw:
+            if not isinstance(row, dict):
+                continue
+            try:
+                snapshots.append(
+                    {
+                        "id": str(row.get("id", row.get("uavId", "uav"))),
+                        "mission": str(row.get("mission", row.get("missionId", "live"))),
+                        "qosClass": str(row.get("qosClass", row.get("qos_class", "telemetry"))),
+                        "x": float(row.get("x", 0.0)),
+                        "y": float(row.get("y", 0.0)),
+                        "z": float(row.get("z", 0.0)),
+                        "headingDeg": float(row.get("headingDeg", row.get("heading_deg", 0.0))),
+                        "speedMps": float(row.get("speedMps", row.get("speed_mps", 0.0))),
+                        "attachedBsId": str(row.get("attachedBsId", row.get("cellId", row.get("servingCellId", "N/A")))),
+                        "rsrpDbm": float(row.get("rsrpDbm", row.get("rsrp_dbm", -120.0))),
+                        "sinrDb": float(row.get("sinrDb", row.get("sinr_db", 0.0))),
+                        "latencyMs": float(row.get("latencyMs", row.get("latency_ms", 0.0))),
+                        "packetLossPct": float(row.get("packetLossPct", row.get("packet_loss_pct", 0.0))),
+                        "trackingConfidencePct": float(row.get("trackingConfidencePct", row.get("tracking_confidence_pct", 100.0))),
+                        "interferenceRisk": str(row.get("interferenceRisk", row.get("risk", "unknown"))),
+                    }
+                )
+            except Exception:
+                continue
+        if not snapshots:
+            return None
+        try:
+            kpis = {
+                "coverageScorePct": float(kpis_raw.get("coverageScorePct", kpis_raw.get("coverage_score_pct", 0.0))),
+                "avgSinrDb": float(kpis_raw.get("avgSinrDb", kpis_raw.get("avg_sinr_db", 0.0))),
+                "avgLatencyMs": float(kpis_raw.get("avgLatencyMs", kpis_raw.get("avg_latency_ms", 0.0))),
+                "highInterferenceRiskCount": int(kpis_raw.get("highInterferenceRiskCount", kpis_raw.get("high_interference_risk_count", 0))),
+                "utmTrackingHealthPct": float(kpis_raw.get("utmTrackingHealthPct", kpis_raw.get("utm_tracking_health_pct", 0.0))),
+            }
+        except Exception:
+            return None
+        normalized: Dict[str, Any] = {
+            "timestamp": str(payload.get("timestamp") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")),
+            "trackingSnapshots": snapshots,
+            "networkKpis": kpis,
+            "selectedTracking": payload.get("selectedTracking"),
+            "source": str(payload.get("source") or ("pull" if NETWORK_TELEMETRY_SOURCE_URL else "push")),
+        }
+        if isinstance(payload.get("baseStations"), list):
+            normalized["baseStations"] = payload.get("baseStations")
+        if isinstance(payload.get("coverage"), list):
+            normalized["coverage"] = payload.get("coverage")
+        return normalized
 
     def tick(self, steps: int = 1) -> Dict[str, Any]:
         self._sync_tracked_uavs_from_sim()
@@ -345,29 +442,58 @@ class NetworkMissionService:
 
     def get_state(self, airspace_segment: str = "sector-A3", selected_uav_id: str | None = None) -> Dict[str, Any]:
         self._sync_tracked_uavs_from_sim()
+        mode = self.traffic_mode()
+        live_telemetry = self._fetch_external_live_telemetry() or (dict(self.latest_live_telemetry) if isinstance(self.latest_live_telemetry, dict) else None)
         tracked = list(self.tracked_uavs.values())
-        snapshots = [self._snapshot_for_uav(u) for u in tracked]
-        avg_sinr = sum(s["sinrDb"] for s in snapshots) / len(snapshots) if snapshots else 0.0
-        avg_latency = sum(s["latencyMs"] for s in snapshots) / len(snapshots) if snapshots else 0.0
-        high_risk = sum(1 for s in snapshots if s["interferenceRisk"] == "high")
-        coverage_score = _clamp(
-            93
-            + sum(1 for b in self.base_stations if self._coverage_radius(b) > 85) * 1.1
-            - sum(1 for b in self.base_stations if b.status != "online") * 2.4
-            - high_risk * 1.8,
-            72,
-            99,
-        )
-        utm_health = _clamp(99 - high_risk * 6 - max(0.0, 12.0 - avg_sinr) * 1.2, 70, 99.4)
-        selected = next((s for s in snapshots if s["id"] == selected_uav_id), None)
-        if selected is None and snapshots:
-            selected = snapshots[0]
+        using_live = bool(live_telemetry and mode in {"real", "auto"})
+        if mode == "real" and not live_telemetry:
+            return {
+                "status": "error",
+                "error": "real_traffic_unavailable",
+                "detail": "Configure NETWORK_TELEMETRY_SOURCE_URL or push telemetry to /api/network/telemetry/ingest",
+                "result": {"trafficSource": {"mode": mode, "active": "none", "config": self.traffic_source_config()}},
+            }
+        if using_live and isinstance(live_telemetry, dict):
+            snapshots = [dict(s) for s in live_telemetry.get("trackingSnapshots", []) if isinstance(s, dict)]
+            selected = next((s for s in snapshots if s.get("id") == selected_uav_id), None)
+            if selected is None:
+                selected = next((s for s in [live_telemetry.get("selectedTracking")] if isinstance(s, dict)), None)
+            if selected is None and snapshots:
+                selected = snapshots[0]
+            kpis_live = live_telemetry.get("networkKpis")
+            kpis = dict(kpis_live) if isinstance(kpis_live, dict) else {}
+        else:
+            snapshots = [self._snapshot_for_uav(u) for u in tracked]
+            avg_sinr = sum(s["sinrDb"] for s in snapshots) / len(snapshots) if snapshots else 0.0
+            avg_latency = sum(s["latencyMs"] for s in snapshots) / len(snapshots) if snapshots else 0.0
+            high_risk = sum(1 for s in snapshots if s["interferenceRisk"] == "high")
+            coverage_score = _clamp(
+                93
+                + sum(1 for b in self.base_stations if self._coverage_radius(b) > 85) * 1.1
+                - sum(1 for b in self.base_stations if b.status != "online") * 2.4
+                - high_risk * 1.8,
+                72,
+                99,
+            )
+            utm_health = _clamp(99 - high_risk * 6 - max(0.0, 12.0 - avg_sinr) * 1.2, 70, 99.4)
+            selected = next((s for s in snapshots if s["id"] == selected_uav_id), None)
+            if selected is None and snapshots:
+                selected = snapshots[0]
+            kpis = {
+                "coverageScorePct": round(float(coverage_score), 1),
+                "avgSinrDb": round(float(avg_sinr), 1),
+                "avgLatencyMs": round(float(avg_latency), 1),
+                "highInterferenceRiskCount": high_risk,
+                "utmTrackingHealthPct": round(float(utm_health), 1),
+            }
         remote_utm = self._fetch_remote_utm_state(airspace_segment)
         utm_payload = remote_utm or {
             "weather": UTM_SERVICE.get_weather(airspace_segment),
             "weatherChecks": UTM_SERVICE.check_weather(airspace_segment),
             "noFlyZones": list(UTM_SERVICE.no_fly_zones),
             "regulations": dict(UTM_SERVICE.regulations),
+            "regulationProfiles": {k: dict(v) for k, v in UTM_SERVICE.regulation_profiles.items()},
+            "effectiveRegulations": UTM_SERVICE.effective_regulations(None),
             "licenses": dict(UTM_SERVICE.operator_licenses),
         }
         return {
@@ -376,18 +502,27 @@ class NetworkMissionService:
                 "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "lastTickTs": self.last_tick_ts,
                 "airspaceSegment": airspace_segment,
-                "baseStations": [b.as_dict() for b in self.base_stations],
-                "coverage": [{"bsId": b.id, "radiusM": round(self._coverage_radius(b), 1)} for b in self.base_stations],
+                "trafficSource": {
+                    "mode": mode,
+                    "active": "live" if using_live else "simulated",
+                    "config": self.traffic_source_config(),
+                    "liveTimestamp": (live_telemetry.get("timestamp") if isinstance(live_telemetry, dict) else None),
+                    "liveReceivedAt": (live_telemetry.get("receivedAt") if isinstance(live_telemetry, dict) else None),
+                },
+                "baseStations": (
+                    live_telemetry.get("baseStations")
+                    if using_live and isinstance(live_telemetry, dict) and isinstance(live_telemetry.get("baseStations"), list)
+                    else [b.as_dict() for b in self.base_stations]
+                ),
+                "coverage": (
+                    live_telemetry.get("coverage")
+                    if using_live and isinstance(live_telemetry, dict) and isinstance(live_telemetry.get("coverage"), list)
+                    else [{"bsId": b.id, "radiusM": round(self._coverage_radius(b), 1)} for b in self.base_stations]
+                ),
                 "uavs": [u.as_dict() for u in tracked],
                 "trackingSnapshots": snapshots,
                 "selectedTracking": selected,
-                "networkKpis": {
-                    "coverageScorePct": round(float(coverage_score), 1),
-                    "avgSinrDb": round(float(avg_sinr), 1),
-                    "avgLatencyMs": round(float(avg_latency), 1),
-                    "highInterferenceRiskCount": high_risk,
-                    "utmTrackingHealthPct": round(float(utm_health), 1),
-                },
+                "networkKpis": kpis,
                 "utm": utm_payload,
                 "simFleet": self._fetch_remote_uav_fleet() or SIM.fleet_snapshot(),
             },

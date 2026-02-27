@@ -12,6 +12,14 @@ OBSERVE_OPS: Set[Tuple[str, str]] = {
     ("utm", "regulation_check"),
     ("utm", "time_window_check"),
     ("utm", "operator_license_check"),
+    ("utm", "query_operational_intents"),
+    ("utm", "dss_query_operational_intents"),
+    ("utm", "query_subscriptions"),
+    ("utm", "dss_query_subscriptions"),
+    ("utm", "query_participants"),
+    ("utm", "dss_query_participants"),
+    ("utm", "query_notifications"),
+    ("utm", "dss_query_notifications"),
     ("network", "health"),
     ("network", "slice_monitor"),
     ("network", "kpm_monitor"),
@@ -29,4 +37,3 @@ def classify_command_operation_type(command: Dict[str, Any]) -> str:
 
 
 __all__ = ["OBSERVE_OPS", "classify_command_operation_type"]
-

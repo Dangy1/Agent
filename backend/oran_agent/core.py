@@ -120,7 +120,13 @@ def _append_audit(event: str, payload: Dict[str, Any]) -> None:
         "payload": payload,
     }
     try:
-        with open(_audit_log_path(), "a", encoding="utf-8") as f:
+        path = _audit_log_path()
+        try:
+            from pathlib import Path
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        with open(path, "a", encoding="utf-8") as f:
             f.write(_safe_json(rec, max_len=6000) + "\n")
     except Exception:
         # Logging must never break agent execution.

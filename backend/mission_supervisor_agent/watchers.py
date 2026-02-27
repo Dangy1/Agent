@@ -6,8 +6,11 @@ from typing import Any, Dict, List
 from network_agent.service import NETWORK_MISSION_SERVICE
 from uav_agent.simulator import SIM
 from utm_agent.service import UTM_SERVICE
+from agent_db import AgentDB
 
 from .state import MissionState
+
+_UTM_DB = AgentDB("utm")
 
 
 def _utc_now() -> str:
@@ -97,6 +100,15 @@ def refresh_utm_state(state: MissionState) -> MissionState:
     try:
         uav = state.get("uav_state_snapshot") or state.get("uav_state") or {}
         waypoints = list(uav.get("waypoints") or []) if isinstance(uav, dict) else []
+        dss_intents_raw = _UTM_DB.get_state("dss_operational_intents")
+        dss_intents = dss_intents_raw if isinstance(dss_intents_raw, dict) else {}
+        dss_blocking = 0
+        for rec in dss_intents.values():
+            if not isinstance(rec, dict):
+                continue
+            summary = rec.get("conflict_summary")
+            if isinstance(summary, dict) and int(summary.get("blocking", 0) or 0) > 0:
+                dss_blocking += 1
         utm_snap = {
             "airspace_segment": c["airspace_segment"],
             "weather": UTM_SERVICE.get_weather(c["airspace_segment"]),
@@ -107,6 +119,10 @@ def refresh_utm_state(state: MissionState) -> MissionState:
                 operator_license_id=c["operator_license_id"], required_class=c["required_license_class"]
             ),
             "approvals_store": dict(UTM_SERVICE.approvals),
+            "dss": {
+                "operational_intent_count": len(dss_intents),
+                "blocking_conflict_count": dss_blocking,
+            },
         }
         severe = []
         if not bool((utm_snap.get("weather_check") or {}).get("ok", True)):
@@ -117,6 +133,8 @@ def refresh_utm_state(state: MissionState) -> MissionState:
             severe.append("regulation")
         if not bool((utm_snap.get("license_check") or {}).get("ok", True)):
             severe.append("license")
+        if dss_blocking > 0:
+            severe.append("dss_blocking_conflicts")
         events = _append_event(
             state,
             "utm_state_refreshed",
@@ -181,6 +199,9 @@ def ingest_events(state: MissionState) -> MissionState:
             check = utm.get(k)
             if isinstance(check, dict) and check.get("ok") is False:
                 warnings.append(f"utm_{k}_failed")
+        dss = utm.get("dss")
+        if isinstance(dss, dict) and int(dss.get("blocking_conflict_count", 0) or 0) > 0:
+            warnings.append("utm_dss_blocking_conflicts")
     if isinstance(net, dict):
         kpis = net.get("networkKpis")
         if isinstance(kpis, dict):
@@ -241,4 +262,3 @@ __all__ = [
     "refresh_network_state",
     "ingest_events",
 ]
-

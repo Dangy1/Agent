@@ -157,3 +157,924 @@
   ➜  Local:   http://localhost:5173/
   ➜  Network: http://192.168.88.224:5173/
   ➜  Network: http://192.168.70.129:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 118 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 119 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+6:23:21 PM [vite] (client) hmr update /src/UavPage.tsx
+6:23:27 PM [vite] (client) hmr update /src/UavPage.tsx
+6:27:09 PM [vite] (client) hmr update /src/UavPage.tsx
+6:27:53 PM [vite] (client) hmr update /src/UavPage.tsx
+6:29:20 PM [vite] (client) hmr update /src/UavPage.tsx
+6:36:04 PM [vite] (client) hmr update /src/UavPage.tsx
+6:42:38 PM [vite] (client) hmr update /src/UavPage.tsx
+6:42:56 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:55:22 PM [vite] (client) hmr update /src/UavPage.tsx
+6:55:50 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:55:57 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:56:02 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:56:12 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:56:17 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:56:30 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:56:41 PM [vite] (client) hmr update /src/NetworkPage.tsx
+6:57:01 PM [vite] (client) hmr update /src/NetworkPage.tsx
+6:57:26 PM [vite] (client) hmr update /src/UavPage.tsx
+6:59:53 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:59:58 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:00:09 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:00:23 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:00:40 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:04:38 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:07:18 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:10:33 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:11:17 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:13:29 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:16:25 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:18:37 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:20:42 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:20:51 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:24:36 PM [vite] (client) hmr update /src/UavPage.tsx
+7:24:50 PM [vite] (client) hmr update /src/UavPage.tsx
+7:25:13 PM [vite] (client) hmr update /src/UavPage.tsx
+7:25:45 PM [vite] (client) hmr update /src/UavPage.tsx
+7:27:57 PM [vite] (client) hmr update /src/UavPage.tsx
+7:29:41 PM [vite] (client) hmr update /src/UavPage.tsx
+7:30:12 PM [vite] (client) hmr update /src/UavPage.tsx
+7:32:19 PM [vite] (client) hmr update /src/UavPage.tsx
+7:32:32 PM [vite] (client) hmr update /src/UavPage.tsx
+7:33:43 PM [vite] (client) hmr update /src/UavPage.tsx
+7:34:50 PM [vite] (client) hmr update /src/UavPage.tsx
+7:36:45 PM [vite] (client) hmr update /src/UavPage.tsx
+7:37:03 PM [vite] (client) hmr update /src/UavPage.tsx
+7:38:38 PM [vite] (client) hmr update /src/UavPage.tsx
+7:41:11 PM [vite] (client) hmr update /src/UavPage.tsx
+7:43:47 PM [vite] (client) hmr update /src/UavPage.tsx
+7:43:54 PM [vite] (client) hmr update /src/UavPage.tsx
+7:45:23 PM [vite] (client) hmr update /src/UavPage.tsx
+7:45:38 PM [vite] (client) hmr update /src/UavPage.tsx
+7:46:30 PM [vite] (client) hmr update /src/UavPage.tsx
+7:49:43 PM [vite] (client) hmr update /src/UavPage.tsx
+7:52:26 PM [vite] (client) hmr update /src/UavPage.tsx
+7:53:08 PM [vite] (client) hmr update /src/UavPage.tsx
+7:53:23 PM [vite] (client) hmr update /src/UavPage.tsx
+7:53:35 PM [vite] (client) hmr update /src/UavPage.tsx
+7:54:12 PM [vite] (client) hmr update /src/UavPage.tsx
+7:57:14 PM [vite] (client) hmr update /src/UavPage.tsx
+7:59:00 PM [vite] (client) hmr update /src/UavPage.tsx
+7:59:10 PM [vite] (client) hmr update /src/UavPage.tsx
+8:00:11 PM [vite] (client) hmr update /src/UavPage.tsx
+8:00:25 PM [vite] (client) hmr update /src/UavPage.tsx
+8:01:06 PM [vite] (client) hmr update /src/UavPage.tsx
+8:02:08 PM [vite] (client) hmr update /src/UavPage.tsx
+8:02:23 PM [vite] (client) hmr update /src/UavPage.tsx
+8:03:48 PM [vite] (client) hmr update /src/UavPage.tsx
+8:06:13 PM [vite] (client) hmr update /src/UavPage.tsx
+8:08:38 PM [vite] (client) hmr update /src/UavPage.tsx
+8:09:35 PM [vite] (client) hmr update /src/UavPage.tsx
+8:11:20 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:12:39 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:13:16 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:15:01 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:15:49 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:16:38 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:19:14 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:19:42 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:20:47 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:22:37 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:24:57 PM [vite] (client) hmr update /src/UtmPage.tsx
+8:28:11 PM [vite] (client) hmr update /src/UavPage.tsx
+8:31:35 PM [vite] (client) hmr update /src/UavPage.tsx
+8:33:36 PM [vite] (client) hmr update /src/UavPage.tsx
+8:35:20 PM [vite] (client) hmr update /src/UavPage.tsx
+8:36:23 PM [vite] (client) hmr update /src/UavPage.tsx
+8:37:54 PM [vite] (client) hmr update /src/UavPage.tsx
+8:38:42 PM [vite] (client) hmr update /src/UavPage.tsx
+8:39:43 PM [vite] (client) hmr update /src/UavPage.tsx
+8:40:20 PM [vite] (client) hmr update /src/UavPage.tsx
+8:41:29 PM [vite] (client) hmr update /src/UavPage.tsx
+8:43:44 PM [vite] (client) hmr update /src/UavPage.tsx
+10:36:51 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+10:37:03 AM [vite] (client) hmr update /src/UtmPage.tsx
+10:41:07 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+10:51:15 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+10:51:15 AM [vite] Internal server error: /home/dang/agent_test/frontend/src/MissionSyncMap.tsx: Unexpected token (635:160)
+
+  633 |         {baseStations.map((bs) => { const q = project({ x: bs.x, y: bs.y, z: 0 }); return <g key={bs.id}><circle cx={q.x} cy={q.y} r={7} fill="#fff" stroke={statusColor(bs.status)} strokeWidth={2} /><text x={q.x + 9} y={q.y - 8} fontSize="10" fill="#101828">{bs.id}</text></g>; })}
+  634 |
+> 635 |         {plannedPosition ? <g>{(() => { const q = project(plannedPosition); const g = project2({ x: plannedPosition.x, y: plannedPosition.y, z: 0 }); return <><{viewMode === "3d" ? "line" : "g"} /></>; })()}</g> : null}
+      |                                                                                                                                                                 ^
+  636 |         {plannedPosition ? (() => {
+  637 |           const q = project(plannedPosition);
+  638 |           const g = project2({ x: plannedPosition.x, y: plannedPosition.y, z: 0 });
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/MissionSyncMap.tsx:635:160
+  633 |          {baseStations.map((bs) => { const q = project({ x: bs.x, y: bs.y, z: 0 }); return <g key={bs.id}><circle cx={...
+  634 |  
+  635 |  ...plannedPosition.x, y: plannedPosition.y, z: 0 }); return <><{viewMode === "3d" ? "line" : "g"} /></>; })()}</g> : nul
+      |                                                                 ^
+  636 |          {plannedPosition ? (() => {
+  637 |            const q = project(plannedPosition);
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.unexpected (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6619:16)
+      at TypeScriptParserMixin.jsxParseIdentifier (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4569:12)
+      at TypeScriptParserMixin.jsxParseNamespacedName (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4576:23)
+      at TypeScriptParserMixin.jsxParseElementName (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4585:21)
+      at TypeScriptParserMixin.jsxParseOpeningElementAt (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4661:22)
+      at TypeScriptParserMixin.jsxParseElementAt (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4686:33)
+      at TypeScriptParserMixin.jsxParseElementAt (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4698:32)
+      at TypeScriptParserMixin.jsxParseElement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4749:17)
+      at TypeScriptParserMixin.parseExprAtom (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4759:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9775:39
+      at TypeScriptParserMixin.tryParse (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6907:20)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9775:18)
+      at TypeScriptParserMixin.parseExpressionBase (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10784:23)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10780:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseExpression (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10780:17)
+      at TypeScriptParserMixin.parseReturnStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13142:28)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12798:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseArrowExpression (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12075:10)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11687:12)
+      at TypeScriptParserMixin.parseExprAtom (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:4764:20)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+10:51:27 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+10:51:40 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+10:56:18 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+10:56:44 AM [vite] (client) hmr update /src/UavPage.tsx
+10:58:38 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+10:59:54 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:03:47 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:04:01 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:07:11 AM [vite] (client) hmr update /src/UavPage.tsx
+11:10:40 AM [vite] (client) hmr update /src/UavPage.tsx
+11:10:49 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:10:57 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:11:42 AM [vite] (client) hmr update /src/UavPage.tsx
+11:12:14 AM [vite] (client) hmr update /src/UavPage.tsx
+11:35:39 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:36:51 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:37:50 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:40:05 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:47:12 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:47:21 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:47:56 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:48:43 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:49:22 AM [vite] (client) hmr update /src/UavPage.tsx
+11:51:09 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:51:23 AM [vite] (client) hmr update /src/NetworkPage.tsx
+11:51:34 AM [vite] (client) hmr update /src/UtmPage.tsx
+11:53:27 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:54:25 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+12:04:43 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+12:05:01 PM [vite] (client) hmr update /src/UavPage.tsx
+12:05:05 PM [vite] (client) hmr update /src/UavPage.tsx
+12:05:12 PM [vite] (client) hmr update /src/UavPage.tsx
+12:05:17 PM [vite] (client) hmr update /src/UavPage.tsx
+12:05:31 PM [vite] (client) hmr update /src/UavPage.tsx
+12:05:43 PM [vite] (client) hmr update /src/UavPage.tsx
+12:05:55 PM [vite] (client) hmr update /src/UavPage.tsx
+12:06:12 PM [vite] (client) hmr update /src/UavPage.tsx
+12:06:30 PM [vite] (client) hmr update /src/UavPage.tsx
+12:07:07 PM [vite] (client) hmr update /src/UavPage.tsx
+12:09:55 PM [vite] (client) hmr update /src/UavPage.tsx
+12:10:00 PM [vite] (client) hmr update /src/UavPage.tsx
+12:17:53 PM [vite] (client) hmr update /src/UavPage.tsx
+12:17:58 PM [vite] (client) hmr update /src/UavPage.tsx
+12:18:10 PM [vite] (client) hmr update /src/UavPage.tsx
+12:18:10 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (1008:111)
+
+  1006 |     [registryUserUavs, simUavId],
+  1007 |   );
+> 1008 |   const selectedUavAssignedLicenseId = String(selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                                                                ^
+  1009 |
+  1010 |   const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+  1011 |     const uavId = simUavId.trim();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:1008:111
+  1006 |      [registryUserUavs, simUavId],
+  1007 |    );
+  1008 |  ...tedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                 ^
+  1009 |  
+  1010 |    const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:18:19 PM [vite] (client) hmr update /src/UavPage.tsx
+12:18:19 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (1020:111)
+
+  1018 |     [registryUserUavs, simUavId],
+  1019 |   );
+> 1020 |   const selectedUavAssignedLicenseId = String(selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                                                                ^
+  1021 |
+  1022 |   const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+  1023 |     const uavId = simUavId.trim();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:1020:111
+  1018 |      [registryUserUavs, simUavId],
+  1019 |    );
+  1020 |  ...tedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                 ^
+  1021 |  
+  1022 |    const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:18:29 PM [vite] (client) hmr update /src/UavPage.tsx
+12:18:29 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (1003:111)
+
+  1001 |     [registryUserUavs, simUavId],
+  1002 |   );
+> 1003 |   const selectedUavAssignedLicenseId = String(selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                                                                ^
+  1004 |
+  1005 |   const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+  1006 |     const uavId = simUavId.trim();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:1003:111
+  1001 |      [registryUserUavs, simUavId],
+  1002 |    );
+  1003 |  ...tedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                 ^
+  1004 |  
+  1005 |    const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:18:50 PM [vite] (client) hmr update /src/UavPage.tsx
+12:18:50 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (1003:111)
+
+  1001 |     [registryUserUavs, simUavId],
+  1002 |   );
+> 1003 |   const selectedUavAssignedLicenseId = String(selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                                                                ^
+  1004 |
+  1005 |   const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+  1006 |     const uavId = simUavId.trim();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:1003:111
+  1001 |      [registryUserUavs, simUavId],
+  1002 |    );
+  1003 |  ...tedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                 ^
+  1004 |  
+  1005 |    const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:19:00 PM [vite] (client) hmr update /src/UavPage.tsx
+12:19:00 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (1003:111)
+
+  1001 |     [registryUserUavs, simUavId],
+  1002 |   );
+> 1003 |   const selectedUavAssignedLicenseId = String(selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                                                                ^
+  1004 |
+  1005 |   const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+  1006 |     const uavId = simUavId.trim();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:1003:111
+  1001 |      [registryUserUavs, simUavId],
+  1002 |    );
+  1003 |  ...tedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                 ^
+  1004 |  
+  1005 |    const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:19:21 PM [vite] (client) hmr update /src/UavPage.tsx
+12:19:21 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (1007:111)
+
+  1005 |     [registryUserUavs, simUavId],
+  1006 |   );
+> 1007 |   const selectedUavAssignedLicenseId = String(selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                                                                ^
+  1008 |
+  1009 |   const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+  1010 |     const uavId = simUavId.trim();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:1007:111
+  1005 |      [registryUserUavs, simUavId],
+  1006 |    );
+  1007 |  ...tedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                 ^
+  1008 |  
+  1009 |    const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:19:25 PM [vite] (client) hmr update /src/UavPage.tsx
+12:19:25 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (1007:111)
+
+  1005 |     [registryUserUavs, simUavId],
+  1006 |   );
+> 1007 |   const selectedUavAssignedLicenseId = String(selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                                                                ^
+  1008 |
+  1009 |   const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+  1010 |     const uavId = simUavId.trim();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:1007:111
+  1005 |      [registryUserUavs, simUavId],
+  1006 |    );
+  1007 |  ...tedRegistryRow?.operator_license_id ?? simOperatorLicenseId || "op-001");
+       |                                                                 ^
+  1008 |  
+  1009 |    const assignSelectedUavLicense = async (operatorLicenseId: string) => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:19:51 PM [vite] (client) hmr update /src/UavPage.tsx
+12:21:35 PM [vite] (client) hmr update /src/UavPage.tsx
+12:21:44 PM [vite] (client) hmr update /src/UavPage.tsx
+12:22:56 PM [vite] (client) hmr update /src/UavPage.tsx
+12:22:56 PM [vite] Internal server error: /home/dang/agent_test/frontend/src/UavPage.tsx: Nullish coalescing operator(??) requires parens when mixing with logical operators. (497:129)
+
+  495 |   const selectedUavAssignedLicenseId = String((selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId) || "op-001");
+  496 |   const effectiveOperatorLicenseId = selectedUavAssignedLicenseId;
+> 497 |   const effectiveRequiredLicenseClass = String(asRecord(selectedRegistryRow?.operator_license)?.license_class ?? simLicenseClass || "VLOS");
+      |                                                                                                                                  ^
+  498 |
+  499 |   useEffect(() => {
+  500 |     void loadState();
+  Plugin: vite:react-babel
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:497:129
+  495 |    const selectedUavAssignedLicenseId = String((selectedRegistryRow?.operator_license_id ?? simOperatorLicenseId) || "...
+  496 |    const effectiveOperatorLicenseId = selectedUavAssignedLicenseId;
+  497 |  ...tryRow?.operator_license)?.license_class ?? simLicenseClass || "VLOS");
+      |                                                                 ^
+  498 |  
+  499 |    useEffect(() => {
+      at constructor (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:365:19)
+      at TypeScriptParserMixin.raise (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:6599:19)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10951:22)
+      at TypeScriptParserMixin.parseExprOp (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9306:18)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10908:17)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12426:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12493:17)
+      at TypeScriptParserMixin.parseExprListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12175:18)
+      at TypeScriptParserMixin.parseCallExpressionArguments (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11252:22)
+      at TypeScriptParserMixin.parseCoverCallAndAsyncArrowHead (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11186:29)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11120:19)
+      at TypeScriptParserMixin.parseSubscript (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9272:18)
+      at TypeScriptParserMixin.parseSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11094:19)
+      at TypeScriptParserMixin.parseExprSubscripts (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11085:17)
+      at TypeScriptParserMixin.parseUpdate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9837:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9786:20)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12421:16)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:10800:17)
+      at TypeScriptParserMixin.parseVar (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13384:91)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13230:10)
+      at TypeScriptParserMixin.parseVarStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9408:31)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12851:23)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+      at TypeScriptParserMixin.parseStatementListItem (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12747:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13316:61)
+      at TypeScriptParserMixin.parseBlockBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13309:10)
+      at TypeScriptParserMixin.parseBlock (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13297:10)
+      at TypeScriptParserMixin.parseFunctionBody (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12100:24)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12086:10)
+      at TypeScriptParserMixin.parseFunctionBodyAndFinish (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9172:18)
+      at /home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13445:12
+      at TypeScriptParserMixin.withSmartMixTopicForbiddingContext (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12403:14)
+      at TypeScriptParserMixin.parseFunction (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13444:10)
+      at TypeScriptParserMixin.parseFunctionStatement (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:13125:17)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12791:21)
+      at TypeScriptParserMixin.parseStatementContent (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (/home/dang/agent_test/frontend/node_modules/@babel/parser/lib/index.js:12767:17)
+12:23:01 PM [vite] (client) hmr update /src/UavPage.tsx
+12:23:05 PM [vite] (client) hmr update /src/UavPage.tsx
+12:23:20 PM [vite] (client) hmr update /src/UavPage.tsx
+12:25:48 PM [vite] (client) hmr update /src/UavPage.tsx
+12:27:32 PM [vite] (client) hmr update /src/UavPage.tsx
+12:29:52 PM [vite] (client) hmr update /src/UavPage.tsx
+12:31:12 PM [vite] (client) hmr update /src/UavPage.tsx
+12:34:12 PM [vite] (client) hmr update /src/UavPage.tsx
+12:34:38 PM [vite] (client) hmr update /src/UavPage.tsx
+12:34:50 PM [vite] (client) hmr update /src/UavPage.tsx
+12:38:45 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+12:38:54 PM [vite] (client) hmr update /src/UavPage.tsx
+12:39:13 PM [vite] (client) hmr update /src/UavPage.tsx
+12:41:11 PM [vite] (client) hmr update /src/UavPage.tsx
+12:45:28 PM [vite] (client) hmr update /src/UavPage.tsx
+12:47:18 PM [vite] (client) hmr update /src/UavPage.tsx
+12:47:30 PM [vite] (client) hmr update /src/UavPage.tsx
+12:53:13 PM [vite] (client) hmr update /src/UavPage.tsx
+12:54:17 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+12:56:55 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+1:01:06 PM [vite] (client) hmr update /src/UavPage.tsx
+1:02:20 PM [vite] (client) hmr update /src/UavPage.tsx
+1:05:57 PM [vite] (client) hmr update /src/UavPage.tsx
+1:14:15 PM [vite] (client) hmr update /src/UavPage.tsx
+1:16:15 PM [vite] (client) hmr update /src/UavPage.tsx
+1:20:30 PM [vite] (client) hmr update /src/UavPage.tsx
+1:20:35 PM [vite] (client) hmr update /src/UavPage.tsx
+1:20:42 PM [vite] (client) hmr update /src/UavPage.tsx
+1:20:48 PM [vite] (client) hmr update /src/UtmPage.tsx
+1:21:09 PM [vite] (client) hmr update /src/UtmPage.tsx
+1:24:16 PM [vite] (client) hmr update /src/UtmPage.tsx
+1:24:21 PM [vite] (client) hmr update /src/UavPage.tsx
+2:24:30 PM [vite] (client) hmr update /src/UavPage.tsx
+2:32:32 PM [vite] (client) hmr update /src/UavPage.tsx
+2:32:36 PM [vite] (client) hmr update /src/UavPage.tsx
+2:32:47 PM [vite] (client) hmr update /src/UavPage.tsx
+2:32:50 PM [vite] (client) hmr update /src/UavPage.tsx
+2:32:56 PM [vite] (client) hmr update /src/UavPage.tsx
+2:40:20 PM [vite] (client) hmr update /src/UavPage.tsx
+2:40:31 PM [vite] (client) hmr update /src/UavPage.tsx
+2:40:36 PM [vite] (client) hmr update /src/UavPage.tsx
+2:40:44 PM [vite] (client) hmr update /src/UavPage.tsx
+2:40:58 PM [vite] (client) hmr update /src/UavPage.tsx
+2:54:30 PM [vite] (client) hmr update /src/UavPage.tsx
+2:59:55 PM [vite] (client) hmr update /src/UavPage.tsx
+3:03:14 PM [vite] (client) hmr update /src/UavPage.tsx
+3:03:29 PM [vite] (client) hmr update /src/UavPage.tsx
+3:03:38 PM [vite] (client) hmr update /src/UavPage.tsx
+3:03:48 PM [vite] (client) hmr update /src/UavPage.tsx
+3:03:57 PM [vite] (client) hmr update /src/UavPage.tsx
+3:04:07 PM [vite] (client) hmr update /src/UavPage.tsx
+3:04:38 PM [vite] (client) hmr update /src/UavPage.tsx
+3:04:55 PM [vite] (client) hmr update /src/UavPage.tsx
+3:07:35 PM [vite] (client) hmr update /src/UavPage.tsx
+3:10:11 PM [vite] (client) hmr update /src/UavPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 122 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+3:21:43 PM [vite] (client) hmr update /src/UavPage.tsx
+3:23:45 PM [vite] (client) hmr update /src/UavPage.tsx
+3:28:54 PM [vite] (client) hmr update /src/UavPage.tsx
+3:29:13 PM [vite] (client) hmr update /src/UavPage.tsx
+3:29:22 PM [vite] (client) hmr update /src/UavPage.tsx
+5:43:26 PM [vite] (client) hmr update /src/UavPage.tsx
+5:43:42 PM [vite] (client) hmr update /src/UavPage.tsx
+5:44:14 PM [vite] (client) hmr update /src/UavPage.tsx
+6:03:06 PM [vite] (client) hmr update /src/UavPage.tsx
+6:03:12 PM [vite] (client) hmr update /src/UavPage.tsx
+6:04:16 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+6:04:23 PM [vite] (client) hmr update /src/UavPage.tsx
+6:04:32 PM [vite] (client) hmr update /src/UavPage.tsx
+6:08:47 PM [vite] (client) hmr update /src/UavPage.tsx
+6:08:52 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+6:10:28 PM [vite] (client) hmr update /src/UavPage.tsx
+6:10:34 PM [vite] (client) hmr update /src/UavPage.tsx
+6:59:34 PM [vite] (client) hmr update /src/UavPage.tsx
+6:59:39 PM [vite] (client) hmr update /src/UavPage.tsx
+7:07:32 PM [vite] (client) hmr update /src/UavPage.tsx
+7:07:46 PM [vite] (client) hmr update /src/UavPage.tsx
+7:12:05 PM [vite] (client) hmr update /src/UavPage.tsx
+7:14:30 PM [vite] (client) hmr update /src/UavPage.tsx
+7:39:09 PM [vite] (client) hmr update /src/UavPage.tsx
+7:39:15 PM [vite] (client) hmr update /src/UavPage.tsx
+7:39:21 PM [vite] (client) hmr update /src/UavPage.tsx
+7:39:30 PM [vite] (client) hmr update /src/UavPage.tsx
+7:39:45 PM [vite] (client) hmr update /src/UavPage.tsx
+7:40:04 PM [vite] (client) hmr update /src/UavPage.tsx
+7:42:48 PM [vite] (client) hmr update /src/UavPage.tsx
+7:42:53 PM [vite] (client) hmr update /src/UavPage.tsx
+7:42:56 PM [vite] (client) hmr update /src/UavPage.tsx
+7:52:06 PM [vite] (client) hmr update /src/UavPage.tsx
+7:52:12 PM [vite] (client) hmr update /src/UavPage.tsx
+7:53:20 PM [vite] (client) hmr update /src/UavPage.tsx
+7:56:01 PM [vite] (client) hmr update /src/UavPage.tsx
+7:59:07 PM [vite] (client) hmr update /src/UavPage.tsx
+8:04:12 PM [vite] (client) hmr update /src/UavPage.tsx
+8:04:20 PM [vite] (client) hmr update /src/UavPage.tsx
+8:16:10 PM [vite] (client) hmr update /src/UavPage.tsx
+8:16:18 PM [vite] (client) hmr update /src/UavPage.tsx
+8:16:29 PM [vite] (client) hmr update /src/MissionSyncMap.tsx
+1:45:38 PM [vite] (client) hmr update /src/NetworkPage.tsx
+4:16:00 PM [vite] (client) hmr update /src/UavPage.tsx
+4:16:25 PM [vite] (client) hmr update /src/UavPage.tsx
+4:16:44 PM [vite] (client) hmr update /src/UavPage.tsx
+4:17:19 PM [vite] (client) hmr update /src/UavPage.tsx
+4:19:44 PM [vite] (client) hmr update /src/UavPage.tsx
+4:19:57 PM [vite] (client) hmr update /src/UavPage.tsx
+4:21:10 PM [vite] (client) hmr update /src/UavPage.tsx
+4:22:01 PM [vite] (client) hmr update /src/UavPage.tsx
+4:24:11 PM [vite] (client) hmr update /src/UavPage.tsx
+4:33:43 PM [vite] (client) hmr update /src/UavPage.tsx
+4:34:29 PM [vite] (client) hmr update /src/UavPage.tsx
+4:34:40 PM [vite] (client) hmr update /src/UavPage.tsx
+4:34:53 PM [vite] (client) hmr update /src/UavPage.tsx
+4:35:29 PM [vite] (client) hmr update /src/UavPage.tsx
+4:37:06 PM [vite] (client) hmr update /src/UavPage.tsx
+4:37:46 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:19 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:23 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:32 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:42 PM [vite] (client) hmr update /src/UavPage.tsx
+4:44:48 PM [vite] (client) hmr update /src/UavPage.tsx
+4:44:57 PM [vite] (client) hmr update /src/UavPage.tsx
+4:50:51 PM [vite] (client) hmr update /src/UavPage.tsx
+4:54:29 PM [vite] (client) hmr update /src/UavPage.tsx
+4:56:23 PM [vite] (client) hmr update /src/UavPage.tsx
+4:58:26 PM [vite] (client) hmr update /src/UavPage.tsx
+5:01:03 PM [vite] (client) hmr update /src/UavPage.tsx
+5:03:47 PM [vite] (client) hmr update /src/UavPage.tsx
+10:53:10 AM [vite] (client) hmr update /src/UavPage.tsx
+11:06:55 AM [vite] (client) hmr update /src/UavPage.tsx
+11:23:31 AM [vite] (client) hmr update /src/UavPage.tsx
+11:23:40 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:27:05 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:27:18 AM [vite] (client) hmr update /src/UavPage.tsx
+11:28:37 AM [vite] (client) hmr update /src/MissionSyncMap.tsx
+11:40:50 AM [vite] (client) hmr update /src/UavPage.tsx
+11:41:42 AM [vite] (client) hmr update /src/UavPage.tsx
+11:47:10 AM [vite] (client) hmr update /src/UavPage.tsx
+11:51:18 AM [vite] (client) hmr update /src/UavPage.tsx
+11:54:35 AM [vite] (client) hmr update /src/UavPage.tsx

@@ -31,6 +31,14 @@ def dispatch_observe_command(command: Dict[str, Any], state: Dict[str, Any]) -> 
             return utm_tools.utm_time_window_check.invoke(params)
         if op == "operator_license_check":
             return utm_tools.utm_operator_license_check.invoke(params)
+        if op in {"query_operational_intents", "dss_query_operational_intents"}:
+            return utm_tools.utm_dss_query_operational_intents.invoke(params)
+        if op in {"query_subscriptions", "dss_query_subscriptions"}:
+            return utm_tools.utm_dss_query_subscriptions.invoke(params)
+        if op in {"query_participants", "dss_query_participants"}:
+            return utm_tools.utm_dss_query_participants.invoke(params)
+        if op in {"query_notifications", "dss_query_notifications"}:
+            return utm_tools.utm_dss_query_notifications.invoke(params)
 
     if domain == "network":
         if op == "health":
@@ -75,6 +83,22 @@ def dispatch_actuate_command(command: Dict[str, Any], state: Dict[str, Any]) -> 
             return utm_tools.utm_reserve_corridor.invoke(params)
         if op == "set_weather":
             return utm_tools.utm_set_weather.invoke(params)
+        if op in {"upsert_operational_intent", "dss_upsert_operational_intent"}:
+            return utm_tools.utm_dss_upsert_operational_intent.invoke(params)
+        if op in {"delete_operational_intent", "dss_delete_operational_intent"}:
+            return utm_tools.utm_dss_delete_operational_intent.invoke(params)
+        if op in {"upsert_subscription", "dss_upsert_subscription"}:
+            return utm_tools.utm_dss_upsert_subscription.invoke(params)
+        if op in {"delete_subscription", "dss_delete_subscription"}:
+            return utm_tools.utm_dss_delete_subscription.invoke(params)
+        if op in {"upsert_participant", "dss_upsert_participant"}:
+            return utm_tools.utm_dss_upsert_participant.invoke(params)
+        if op in {"delete_participant", "dss_delete_participant"}:
+            return utm_tools.utm_dss_delete_participant.invoke(params)
+        if op in {"ack_notification", "dss_ack_notification"}:
+            return utm_tools.utm_dss_ack_notification.invoke(params)
+        if op in {"run_local_conformance", "dss_run_local_conformance"}:
+            return utm_tools.utm_dss_run_local_conformance.invoke(params)
 
     if domain == "network":
         if op == "slice_apply_profile":

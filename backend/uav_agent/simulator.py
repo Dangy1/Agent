@@ -28,6 +28,8 @@ class SimUAV:
     last_update_ts: str = ""
     utm_approval: Dict[str, Any] | None = None
     utm_geofence_result: Dict[str, Any] | None = None
+    data_source: str = "simulated"
+    data_source_meta: Dict[str, Any] | None = None
 
     def snapshot(self) -> Dict[str, Any]:
         return {
@@ -45,6 +47,8 @@ class SimUAV:
             "last_update_ts": self.last_update_ts,
             "utm_approval": self.utm_approval,
             "utm_geofence_result": self.utm_geofence_result,
+            "data_source": self.data_source,
+            "data_source_meta": dict(self.data_source_meta) if isinstance(self.data_source_meta, dict) else None,
         }
 
 
@@ -158,8 +162,68 @@ class UAVSimulator:
     def status(self, uav_id: str) -> Dict[str, Any]:
         return self.get_or_create(uav_id).snapshot()
 
+    def status_if_exists(self, uav_id: str) -> Dict[str, Any] | None:
+        u = self._fleet.get(uav_id)
+        return u.snapshot() if u is not None else None
+
+    def ingest_live_state(
+        self,
+        uav_id: str,
+        *,
+        route_id: str | None = None,
+        waypoints: List[dict] | None = None,
+        position: Dict[str, float] | None = None,
+        waypoint_index: int | None = None,
+        velocity_mps: float | None = None,
+        battery_pct: float | None = None,
+        flight_phase: str | None = None,
+        armed: bool | None = None,
+        active: bool | None = None,
+        source: str = "live",
+        source_meta: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        u = self.get_or_create(uav_id)
+        if route_id is not None:
+            u.route_id = str(route_id)
+        if isinstance(waypoints, list) and waypoints:
+            parsed = [dict(w) for w in waypoints if isinstance(w, dict)]
+            if parsed:
+                u.waypoints = parsed
+        if isinstance(position, dict):
+            u.position = {
+                "x": float(position.get("x", u.position.get("x", 0.0))),
+                "y": float(position.get("y", u.position.get("y", 0.0))),
+                "z": float(position.get("z", u.position.get("z", 0.0))),
+            }
+        elif u.waypoints:
+            idx = max(0, min(int(waypoint_index or u.waypoint_index), len(u.waypoints) - 1))
+            wp = u.waypoints[idx]
+            u.position = {"x": float(wp.get("x", 0.0)), "y": float(wp.get("y", 0.0)), "z": float(wp.get("z", 0.0))}
+        if waypoint_index is not None and u.waypoints:
+            u.waypoint_index = max(0, min(int(waypoint_index), len(u.waypoints) - 1))
+        if velocity_mps is not None:
+            u.velocity_mps = float(velocity_mps)
+        if battery_pct is not None:
+            u.battery_pct = float(battery_pct)
+        if flight_phase is not None:
+            u.flight_phase = str(flight_phase)
+        if armed is not None:
+            u.armed = bool(armed)
+        if active is not None:
+            u.active = bool(active)
+        u.data_source = str(source or "live")
+        u.data_source_meta = dict(source_meta) if isinstance(source_meta, dict) else None
+        self._mark_update(u)
+        return u.snapshot()
+
     def fleet_snapshot(self) -> Dict[str, Dict[str, Any]]:
         return {uav_id: u.snapshot() for uav_id, u in self._fleet.items()}
+
+    def delete_uav(self, uav_id: str) -> bool:
+        if uav_id in self._fleet:
+            del self._fleet[uav_id]
+            return True
+        return False
 
     def load_fleet_snapshot(self, fleet: Dict[str, Dict[str, Any]] | None) -> None:
         if not isinstance(fleet, dict):
@@ -191,6 +255,9 @@ class UAVSimulator:
                 u.utm_approval = dict(snap["utm_approval"])  # type: ignore[index]
             if isinstance(snap.get("utm_geofence_result"), dict):
                 u.utm_geofence_result = dict(snap["utm_geofence_result"])  # type: ignore[index]
+            u.data_source = str(snap.get("data_source", "simulated") or "simulated")
+            if isinstance(snap.get("data_source_meta"), dict):
+                u.data_source_meta = dict(snap["data_source_meta"])  # type: ignore[index]
             restored[u.uav_id] = u
         if restored:
             self._fleet = restored

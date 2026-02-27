@@ -1,0 +1,1089 @@
+"""UAV-domain API routes (simulator, registry, copilot, mission actions)."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from .api_shared import *  # noqa: F401,F403
+from .api_models import UavDemoSeedPayload
+
+router = APIRouter()
+
+
+def _demo_seed_uav_prefix(user_id: str) -> str:
+    raw = str(user_id or "user").strip().lower()
+    cleaned = "".join(ch if ch.isalnum() else "-" for ch in raw)
+    while "--" in cleaned:
+        cleaned = cleaned.replace("--", "-")
+    cleaned = cleaned.strip("-")
+    return cleaned or "user"
+
+
+def _demo_seed_waypoints(*, x0: float, y0: float, z0: float, seed_idx: int) -> list[dict[str, Any]]:
+    cruise = min(110.0, max(38.0, z0 + 38.0 + seed_idx * 2.0))
+    return [
+        {"x": x0, "y": y0, "z": z0, "action": "transit"},
+        {"x": min(400.0, x0 + 40.0), "y": min(300.0, y0 + 30.0), "z": cruise, "action": "transit"},
+        {"x": min(400.0, x0 + 95.0), "y": max(0.0, y0 - 18.0), "z": min(120.0, cruise + 8.0), "action": "photo"},
+        {"x": min(400.0, x0 + 150.0), "y": min(300.0, y0 + 35.0), "z": cruise, "action": "inspect"},
+    ]
+
+
+@router.get("/api/uav/sim/state")
+def get_sim_state(uav_id: str = "uav-1", operator_license_id: Optional[str] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=user_id)
+    route = SIM.status_if_exists(uav_id)
+    session = _get_uav_utm_session(user_id=resolved_user_id, uav_id=uav_id)
+    mission_defaults = _get_uav_mission_defaults(user_id=resolved_user_id, uav_id=uav_id)
+    route_view = dict(route) if isinstance(route, dict) else {}
+    if isinstance(session.get("utm_approval"), dict):
+        route_view["utm_approval"] = dict(session["utm_approval"])
+    if isinstance(session.get("utm_geofence_result"), dict):
+        route_view["utm_geofence_result"] = dict(session["utm_geofence_result"])
+    airspace = "sector-A3"
+    current_waypoints = list(route_view.get("waypoints", [])) if isinstance(route_view.get("waypoints"), list) else []
+    current_route_id = str(route_view.get("route_id", "route-1"))
+    registry_row = _get_uav_registry_uav_row(uav_id)
+    effective_license_id = (
+        str(operator_license_id).strip()
+        if operator_license_id is not None and str(operator_license_id).strip()
+        else str(registry_row.get("operator_license_id", "op-001") or "op-001")
+    )
+    current_route_checks = {
+        "uav_id": uav_id,
+        "user_id": resolved_user_id,
+        "route_id": current_route_id,
+        "airspace_segment": airspace,
+        "waypoints_total": len(current_waypoints),
+        "geofence": _geofence_check_from_waypoints(
+            uav_id=uav_id,
+            route_id=current_route_id,
+            airspace_segment=airspace,
+            waypoints=current_waypoints,
+        ) if len(current_waypoints) >= 1 else None,
+        "no_fly_zone": UTM_SERVICE.check_no_fly_zones(current_waypoints) if len(current_waypoints) >= 1 else None,
+        "operator_license_id": effective_license_id,
+    }
+    user_summary = _registry_user_summary(resolved_user_id)
+    uav_registry_row = registry_row
+    uav_registry_profile = _get_uav_registry_profile(uav_id)
+    mission_paths = _latest_mission_paths_for(user_id=resolved_user_id, uav_id=uav_id)
+    path_records = _path_records_summary_for(user_id=resolved_user_id, uav_id=uav_id)
+    current_mission = _current_mission_record(user_id=resolved_user_id, uav_id=uav_id)
+    return {
+        "status": "success",
+        "sync": UAV_DB.get_sync(),
+        "dataSource": _uav_data_source_info(uav_id),
+        "uav": route_view,
+        "fleet": SIM.fleet_snapshot(),
+        "session": {
+            "scope": "user_uav",
+            "user_id": resolved_user_id,
+            "uav_id": uav_id,
+            "utm_approval": session.get("utm_approval"),
+            "utm_geofence_result": session.get("utm_geofence_result"),
+            "utm_dss_result": session.get("utm_dss_result"),
+            "updated_at": session.get("updated_at"),
+        },
+        "identity": {
+            "selected_user_id": resolved_user_id,
+            "selected_uav_id": uav_id,
+            "uav_registry": uav_registry_row,
+            "uav_registry_profile": uav_registry_profile,
+        },
+        "uav_registry_profile": uav_registry_profile,
+        "uav_mission_defaults": mission_defaults,
+        "mission_paths": mission_paths,
+        "path_records": path_records,
+        "current_mission": current_mission,
+        "planned_route_history": _get_planned_route_history(),
+        "latest_planned_routes": _latest_planned_routes_summary(),
+        "uav_registry_user": user_summary,
+        "utm": {
+            "weather": UTM_SERVICE.get_weather(airspace),
+            "no_fly_zones": UTM_SERVICE.no_fly_zones,
+            "regulations": UTM_SERVICE.regulations,
+            "regulation_profiles": UTM_SERVICE.regulation_profiles,
+            "effective_regulations": UTM_SERVICE.effective_regulations(effective_license_id),
+            "licenses": UTM_SERVICE.operator_licenses,
+            "current_route_checks": current_route_checks,
+        },
+    }
+
+
+@router.get("/api/uav/registry/user")
+def get_uav_registry_user(user_id: str = "user-1") -> Dict[str, Any]:
+    result = _registry_user_summary(user_id)
+    return {"status": "success", "sync": UAV_DB.get_sync(), "result": result}
+
+
+@router.post("/api/uav/registry/assign")
+def post_assign_uav_registry(payload: UavRegistryAssignPayload) -> Dict[str, Any]:
+    user_id = _normalize_user_id(payload.user_id)
+    uav_id = payload.uav_id.strip()
+    if not uav_id:
+        return {"status": "error", "error": "uav_id_required"}
+    SIM.get_or_create(uav_id)
+    _assign_uav_to_user(user_id=user_id, uav_id=uav_id, operator_license_id=payload.operator_license_id)
+    result = _registry_user_summary(user_id)
+    sync = _log_uav_action("registry_assign_uav", payload=payload.model_dump(), result={"user_id": user_id, "uav_id": uav_id}, entity_id=uav_id)
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@router.post("/api/uav/demo/seed-user-profiles")
+def post_seed_demo_user_profiles(payload: UavDemoSeedPayload) -> Dict[str, Any]:
+    user_id = _normalize_user_id(payload.user_id)
+    try:
+        requested_count = int(payload.count)
+    except Exception:
+        requested_count = 3
+    count = max(1, min(8, requested_count))
+    prefix = _demo_seed_uav_prefix(user_id)
+    license_ids = [str(k) for k in (UTM_SERVICE.operator_licenses or {}).keys() if str(k).strip()]
+    if not license_ids:
+        license_ids = ["op-001", "op-002", "op-003"]
+
+    seeded_rows: list[dict[str, Any]] = []
+    for idx in range(count):
+        uav_id = f"uav-{prefix}-{idx + 1}"
+        operator_license_id = license_ids[idx % len(license_ids)]
+        x0 = float(35.0 + (idx * 55.0))
+        y0 = float(35.0 + ((idx % 4) * 60.0))
+        z0 = 0.0
+        route_id = f"{uav_id}-demo-route-1"
+        waypoints = _demo_seed_waypoints(x0=x0, y0=y0, z0=z0, seed_idx=idx)
+
+        SIM.ingest_live_state(
+            uav_id,
+            position={"x": x0, "y": y0, "z": z0},
+            route_id=route_id,
+            source="simulated",
+            source_meta={"created_by": "demo_seed", "user_id": user_id},
+        )
+        SIM.plan_route(uav_id, route_id=route_id, waypoints=waypoints)
+        _assign_uav_to_user(user_id=user_id, uav_id=uav_id, operator_license_id=operator_license_id)
+
+        profile_patch = {
+            "uav_name": f"Demo UAV {idx + 1}",
+            "uav_serial_number": f"SN-{prefix.upper()}-{idx + 1:03d}",
+            "uav_registration_number": f"REG-{prefix.upper()}-{idx + 1:03d}",
+            "manufacturer": "DemoDynamics",
+            "model": f"D-{10 + idx}",
+            "platform_type": "multirotor",
+            "uav_category": "commercial",
+            "uav_size_class": "middle",
+            "max_takeoff_weight_kg": round(6.0 + idx * 0.8, 1),
+            "empty_weight_kg": round(4.0 + idx * 0.6, 1),
+            "payload_capacity_kg": round(2.0 + idx * 0.2, 1),
+            "max_speed_mps_capability": round(17.0 + idx * 1.2, 1),
+            "max_altitude_m": 120.0,
+            "max_flight_time_min": float(34 + idx * 3),
+            "battery_type": "Li-Ion",
+            "battery_capacity_mah": float(16000 + idx * 1200),
+            "remote_id_enabled": True,
+            "remote_id": f"RID-{prefix.upper()}-{idx + 1:03d}",
+            "c2_link_type": "5g" if idx % 2 == 0 else "lte",
+            "launch_site_id": f"{user_id}-launch-{idx + 1}",
+            "landing_site_id": f"{user_id}-landing-{idx + 1}",
+            "contingency_action": "rth",
+            "weather_min_visibility_km": 3.0,
+            "weather_max_wind_mps": round(11.0 + idx * 0.4, 1),
+            "home_base_id": f"{user_id}-home",
+            "home_x": x0,
+            "home_y": y0,
+            "home_z": z0,
+            "status": "active",
+            "firmware_version": f"v2.1.{idx}",
+            "airworthiness_status": "airworthy",
+            "owner_org_id": f"org-{prefix}",
+            "owner_name": user_id,
+            "notes": "Auto-seeded demo UAV profile for UI demonstration.",
+        }
+        saved_profile = _save_uav_registry_profile(user_id=user_id, uav_id=uav_id, patch=profile_patch)
+        mission_defaults = _save_uav_mission_defaults(
+            user_id=user_id,
+            uav_id=uav_id,
+            patch={
+                "route_id": route_id,
+                "airspace_segment": "sector-A3",
+                "requested_speed_mps": round(12.0 + idx * 0.8, 1),
+                "hold_reason": "operator_request",
+                "mission_priority": "normal" if idx < 2 else "urgent",
+                "operation_type": "inspection",
+                "c2_link_type": "5g" if idx % 2 == 0 else "lte",
+            },
+        )
+        _record_planned_route_history(
+            uav_id=uav_id,
+            route_id=route_id,
+            waypoints=waypoints,
+            source="plan",
+            metadata={"user_id": user_id, "route_category": "user_planned", "seeded_demo": True},
+        )
+        seeded_rows.append(
+            {
+                "user_id": user_id,
+                "uav_id": uav_id,
+                "operator_license_id": operator_license_id,
+                "route_id": route_id,
+                "registry_profile": saved_profile,
+                "mission_defaults": mission_defaults,
+                "sim_status": SIM.status(uav_id),
+            }
+        )
+
+    demo_row = seeded_rows[0] if seeded_rows else None
+    result = {
+        "user_id": user_id,
+        "seeded_count": len(seeded_rows),
+        "seeded_uavs": seeded_rows,
+        "demo": demo_row,
+        "uav_registry_user": _registry_user_summary(user_id),
+    }
+    sync = _log_uav_action(
+        "demo_seed_user_profiles",
+        payload={"user_id": user_id, "count": count},
+        result={"seeded_count": len(seeded_rows), "demo_uav_id": (demo_row or {}).get("uav_id")},
+        entity_id=(demo_row or {}).get("uav_id"),
+    )
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@router.post("/api/uav/registry/profile")
+def post_uav_registry_profile(payload: UavRegistryProfilePayload) -> Dict[str, Any]:
+    uav_id = payload.uav_id.strip()
+    if not uav_id:
+        return {"status": "error", "error": "uav_id_required"}
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=payload.user_id)
+    SIM.get_or_create(uav_id)
+    _assign_uav_to_user(user_id=resolved_user_id, uav_id=uav_id)
+    patch = payload.model_dump(exclude_unset=True)
+    patch.pop("user_id", None)
+    patch.pop("uav_id", None)
+    profile = _save_uav_registry_profile(user_id=resolved_user_id, uav_id=uav_id, patch=patch)
+    result = {
+        "user_id": resolved_user_id,
+        "uav_id": uav_id,
+        "registry_profile": profile,
+        "uav_registry_user": _registry_user_summary(resolved_user_id),
+    }
+    sync = _log_uav_action("registry_update_profile", payload={**payload.model_dump(), "user_id": resolved_user_id}, result={"uav_id": uav_id}, entity_id=uav_id)
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@router.post("/api/uav/mission-defaults")
+def post_uav_mission_defaults(payload: UavMissionDefaultsPayload) -> Dict[str, Any]:
+    uav_id = payload.uav_id.strip()
+    if not uav_id:
+        return {"status": "error", "error": "uav_id_required"}
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=payload.user_id)
+    SIM.get_or_create(uav_id)
+    _assign_uav_to_user(user_id=resolved_user_id, uav_id=uav_id)
+    patch = payload.model_dump(exclude_unset=True)
+    patch.pop("user_id", None)
+    patch.pop("uav_id", None)
+    mission_defaults = _save_uav_mission_defaults(user_id=resolved_user_id, uav_id=uav_id, patch=patch)
+    result = {"user_id": resolved_user_id, "uav_id": uav_id, "mission_defaults": mission_defaults}
+    sync = _log_uav_action("uav_update_mission_defaults", payload={**payload.model_dump(), "user_id": resolved_user_id}, result={"uav_id": uav_id}, entity_id=uav_id)
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@router.get("/api/uav/sim/fleet")
+def get_sim_fleet() -> Dict[str, Any]:
+    return {"status": "success", "sync": UAV_DB.get_sync(), "result": {"fleet": SIM.fleet_snapshot()}}
+
+
+@router.get("/api/uav/sync")
+def get_uav_sync(limit_actions: int = 5) -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "result": {
+            "sync": UAV_DB.get_sync(),
+            "recentActions": UAV_DB.recent_actions(limit_actions),
+        },
+    }
+
+
+@router.get("/api/uav/live/source")
+def get_uav_live_source(uav_id: str = "uav-1") -> Dict[str, Any]:
+    return {"status": "success", "sync": UAV_DB.get_sync(), "result": _uav_data_source_info(uav_id)}
+
+
+@router.post("/api/uav/live/ingest")
+def post_uav_live_ingest(payload: UavLiveTelemetryPayload) -> Dict[str, Any]:
+    waypoints = [_dump_waypoint_payload_model(w) for w in payload.waypoints] if payload.waypoints else None
+    pos = payload.position.model_dump() if payload.position else None
+    source_meta = {
+        "source_ref": payload.source_ref,
+        "observed_at": payload.observed_at,
+        "ingested_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    snap = SIM.ingest_live_state(
+        payload.uav_id,
+        route_id=payload.route_id,
+        waypoints=waypoints,
+        position=pos,  # type: ignore[arg-type]
+        waypoint_index=payload.waypoint_index,
+        velocity_mps=payload.velocity_mps,
+        battery_pct=payload.battery_pct,
+        flight_phase=payload.flight_phase,
+        armed=payload.armed,
+        active=payload.active,
+        source=payload.source,
+        source_meta=source_meta,
+    )
+    result = {"uav": snap, "dataSource": _uav_data_source_info(payload.uav_id)}
+    sync = _log_uav_action("uav_live_ingest", payload=payload.model_dump(), result={"dataSource": result["dataSource"]}, entity_id=payload.uav_id)
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@router.post("/api/uav/sim/plan")
+def post_plan_route(payload: PlanRoutePayload) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=payload.user_id)
+    waypoints = [_dump_waypoint_payload_model(w) for w in payload.waypoints]
+    result = uav_plan_route.invoke(
+        {
+            "uav_id": payload.uav_id,
+            "route_id": payload.route_id,
+            "waypoints": waypoints,
+        }
+    )
+    _record_planned_route_history(
+        uav_id=payload.uav_id,
+        route_id=payload.route_id,
+        waypoints=waypoints,
+        source="plan",
+        metadata={"user_id": resolved_user_id, "route_category": "user_planned"},
+    )
+    sync = _log_uav_action("plan_route", payload={**payload.model_dump(), "user_id": resolved_user_id}, result=result, entity_id=payload.uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+        result["session"] = _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+    return result
+
+
+@router.post("/api/uav/sim/fleet/add")
+def post_add_sim_uav(payload: FleetCreateUavPayload) -> Dict[str, Any]:
+    existing = SIM.fleet_snapshot()
+    if payload.uav_id and payload.uav_id.strip():
+        uav_id = payload.uav_id.strip()
+    else:
+        i = 1
+        while f"uav-{i}" in existing:
+            i += 1
+        uav_id = f"uav-{i}"
+    x = max(0.0, min(400.0, float(payload.x)))
+    y = max(0.0, min(300.0, float(payload.y)))
+    z = max(0.0, min(120.0, float(payload.z)))
+    SIM.ingest_live_state(
+        uav_id,
+        position={"x": x, "y": y, "z": z},
+        route_id=f"{uav_id}-route-1",
+        source="simulated",
+        source_meta={"created_by": "ui_map_add"},
+    )
+    reset_route = _generate_reset_route_from_position({"x": x, "y": y, "z": z})
+    SIM.plan_route(uav_id, route_id=f"{uav_id}-route-1", waypoints=reset_route)
+    _assign_uav_to_user(
+        user_id=_normalize_user_id(payload.user_id),
+        uav_id=uav_id,
+        operator_license_id=payload.operator_license_id,
+    )
+    _record_planned_route_history(uav_id=uav_id, route_id=f"{uav_id}-route-1", waypoints=reset_route, source="create_uav")
+    snap = SIM.status(uav_id)
+    sync = _log_uav_action("fleet_add_uav", payload=payload.model_dump(), result={"uav": snap}, entity_id=uav_id)
+    return {"status": "success", "sync": sync, "result": {"uav": snap, "fleet": SIM.fleet_snapshot(), "latest_planned_routes": _latest_planned_routes_summary()}}
+
+
+@router.post("/api/uav/sim/fleet/delete")
+def post_delete_sim_uav(payload: FleetDeleteUavPayload) -> Dict[str, Any]:
+    uav_id = payload.uav_id.strip()
+    if not uav_id:
+        return {"status": "error", "error": "uav_id_required"}
+    existed = SIM.delete_uav(uav_id)
+    _delete_planned_route_history(uav_id)
+    _remove_uav_from_registry(uav_id)
+    result = {"uav_id": uav_id, "deleted": bool(existed), "fleet": SIM.fleet_snapshot(), "latest_planned_routes": _latest_planned_routes_summary()}
+    sync = _log_uav_action("fleet_delete_uav", payload=payload.model_dump(), result=result, entity_id=uav_id)
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@router.post("/api/uav/sim/reset-route")
+def post_reset_sim_route(payload: ResetRoutePayload) -> Dict[str, Any]:
+    snap_before = SIM.status(payload.uav_id)
+    route_id = payload.route_id or f"{payload.uav_id}-route-{int(datetime.now(timezone.utc).timestamp())}"
+    reset_route = _generate_reset_route_from_position(snap_before.get("position") if isinstance(snap_before.get("position"), dict) else {})
+    snap = SIM.plan_route(payload.uav_id, route_id=route_id, waypoints=reset_route)
+    _record_planned_route_history(uav_id=payload.uav_id, route_id=route_id, waypoints=reset_route, source="reset_route")
+    sync = _log_uav_action("reset_route", payload=payload.model_dump(), result={"uav": snap}, entity_id=payload.uav_id)
+    return {"status": "success", "sync": sync, "result": {"uav": snap, "route_id": route_id, "waypoints": reset_route}}
+
+
+@router.post("/api/uav/path-records/delete")
+def post_delete_path_record(payload: PathRecordDeletePayload) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=payload.user_id)
+    category = str(payload.category or "").strip()
+    if category not in {"user_planned", "agent_replanned", "utm_confirmed"}:
+        return {"status": "error", "error": "invalid_category", "allowed": ["user_planned", "agent_replanned", "utm_confirmed"]}
+    deleted = False
+    details: Dict[str, Any] = {"category": category, "user_id": resolved_user_id, "uav_id": payload.uav_id}
+    if category in {"user_planned", "agent_replanned"}:
+        deleted = _delete_planned_route_history_category(uav_id=payload.uav_id, category=category)
+        details["uav_planned_history_deleted"] = deleted
+    else:
+        deleted_uav = _delete_approved_flight_path_for_scope(
+            db=UAV_DB, state_key="approved_flight_path_history", user_id=resolved_user_id, uav_id=payload.uav_id
+        )
+        deleted_utm = _delete_approved_flight_path_for_scope(
+            db=UTM_DB_MIRROR, state_key="approved_flight_path_history", user_id=resolved_user_id, uav_id=payload.uav_id
+        )
+        deleted = deleted_uav or deleted_utm
+        details["uav_approved_history_deleted"] = deleted_uav
+        details["utm_approved_history_deleted"] = deleted_utm
+    details["deleted"] = deleted
+    details["mission_paths"] = _latest_mission_paths_for(user_id=resolved_user_id, uav_id=payload.uav_id)
+    details["path_records"] = _path_records_summary_for(user_id=resolved_user_id, uav_id=payload.uav_id)
+    sync = _log_uav_action("delete_path_record", payload={**payload.model_dump(), "user_id": resolved_user_id}, result=details, entity_id=payload.uav_id)
+    return {"status": "success", "sync": sync, "result": details}
+
+
+@router.post("/api/uav/sim/replan-via-utm-nfz")
+def post_replan_via_utm_nfz(payload: ReplanPayload) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=payload.user_id)
+    max_auto_rounds = 4
+
+    def _count_inserted_waypoints(waypoints: list[dict]) -> int:
+        return sum(1 for w in waypoints if isinstance(w, dict) and str(w.get("_wp_origin", "")) == "agent_inserted")
+
+    def _route_signature(waypoints: list[dict]) -> str:
+        compact: list[str] = []
+        for w in waypoints:
+            if not isinstance(w, dict):
+                continue
+            compact.append(
+                f"{round(float(w.get('x', 0.0)),2)}:{round(float(w.get('y', 0.0)),2)}:{round(float(w.get('z', 0.0)),2)}:"
+                f"{str(w.get('action','transit'))}:{str(w.get('_wp_origin',''))}"
+            )
+        return "|".join(compact)
+
+    def _utm_verify_retryable_conflict(verify: Dict[str, Any] | None) -> bool:
+        if not isinstance(verify, dict):
+            return False
+        checks = verify.get("checks") if isinstance(verify.get("checks"), dict) else {}
+        if not isinstance(checks, dict):
+            return False
+        route_bounds = checks.get("route_bounds") if isinstance(checks.get("route_bounds"), dict) else {}
+        nfz = checks.get("no_fly_zone") if isinstance(checks.get("no_fly_zone"), dict) else {}
+        route_bounds_ok = route_bounds.get("ok")
+        if route_bounds_ok is None:
+            route_bounds_ok = route_bounds.get("geofence_ok")
+        if route_bounds_ok is None:
+            route_bounds_ok = route_bounds.get("bounds_ok")
+        nfz_ok = nfz.get("ok")
+        return bool(route_bounds_ok is False or nfz_ok is False)
+
+    def _invoke_replan(*, user_request: str, route_id: Optional[str], waypoints: Optional[list[dict]]) -> Dict[str, Any]:
+        invoke_payload = {
+            "uav_id": payload.uav_id,
+            "airspace_segment": payload.airspace_segment,
+            "user_request": user_request,
+            "route_id": route_id,
+            "waypoints": waypoints,
+            "optimization_profile": payload.optimization_profile,
+        }
+        return uav_replan_route_via_utm_nfz.invoke(invoke_payload)
+
+    result = _invoke_replan(
+        user_request=payload.user_request,
+        route_id=payload.route_id,
+        waypoints=[_dump_waypoint_payload_model(w) for w in payload.waypoints] if payload.waypoints else None,
+    )
+    utm_verify: Dict[str, Any] | None = None
+    approved_route_records: Dict[str, Any] | None = None
+    auto_replan_utm_loop: list[Dict[str, Any]] = []
+    if isinstance(result, dict) and result.get("status") == "success":
+        seen_signatures: set[str] = set()
+        registry_row = _get_uav_registry_uav_row(payload.uav_id)
+        lic_id = (
+            str(payload.operator_license_id).strip()
+            if payload.operator_license_id and str(payload.operator_license_id).strip()
+            else str(registry_row.get("operator_license_id", "op-001") or "op-001")
+        )
+        lic_rec = UTM_SERVICE.operator_licenses.get(lic_id, {})
+        required_class = str(lic_rec.get("license_class", "VLOS")) if isinstance(lic_rec, dict) else "VLOS"
+
+        round_index = 0
+        while isinstance(result, dict) and result.get("status") == "success" and round_index < max_auto_rounds:
+            round_index += 1
+            rr = result.get("result")
+            if not isinstance(rr, dict):
+                break
+            route_id = str(rr.get("route_id", payload.route_id or "route-1"))
+            uav = rr.get("uav")
+            if not (isinstance(uav, dict) and isinstance(uav.get("waypoints"), list)):
+                break
+            verify_waypoints = [dict(w) for w in uav["waypoints"] if isinstance(w, dict)]
+            waypoint_deletions = rr.get("waypoint_deletions") if isinstance(rr.get("waypoint_deletions"), list) else []
+            los_prune_deletions = rr.get("los_prune_deletions") if isinstance(rr.get("los_prune_deletions"), list) else []
+            los_prune_passes = rr.get("los_prune_passes") if isinstance(rr.get("los_prune_passes"), list) else []
+            inserted_trim_deletions = rr.get("inserted_trim_deletions") if isinstance(rr.get("inserted_trim_deletions"), list) else []
+            inserted_trim_passes = rr.get("inserted_trim_passes") if isinstance(rr.get("inserted_trim_passes"), list) else []
+            replaced_original_waypoints = rr.get("replaced_original_waypoints") if isinstance(rr.get("replaced_original_waypoints"), list) else []
+            inserted_count = _count_inserted_waypoints(verify_waypoints)
+            sig = _route_signature(verify_waypoints)
+            seen_before = sig in seen_signatures
+            seen_signatures.add(sig)
+            _record_planned_route_history(
+                uav_id=payload.uav_id,
+                route_id=route_id,
+                waypoints=verify_waypoints,
+                source="replan_via_utm_nfz",
+                metadata={
+                    "optimization_profile": payload.optimization_profile,
+                    "user_id": resolved_user_id,
+                    "replan_round_index": round_index,
+                    "waypoint_deletions_count": len(waypoint_deletions),
+                    "los_prune_deletions_count": len(los_prune_deletions),
+                    "los_prune_passes_count": len(los_prune_passes),
+                    "los_prune_passes": [dict(p) for p in los_prune_passes if isinstance(p, dict)],
+                    "inserted_trim_deletions_count": len(inserted_trim_deletions),
+                    "inserted_trim_passes_count": len(inserted_trim_passes),
+                    "inserted_trim_passes": [dict(p) for p in inserted_trim_passes if isinstance(p, dict)],
+                    "replaced_original_waypoints_count": len(replaced_original_waypoints),
+                    "inserted_waypoints_count": inserted_count,
+                },
+            )
+
+            approved = False
+            retryable_conflict = False
+            if payload.auto_utm_verify:
+                utm_verify = UTM_SERVICE.verify_flight_plan(
+                    uav_id=payload.uav_id,
+                    airspace_segment=payload.airspace_segment,
+                    route_id=route_id,
+                    waypoints=verify_waypoints,
+                    operator_license_id=lic_id,
+                    required_license_class=required_class or "VLOS",
+                    requested_speed_mps=float(uav.get("velocity_mps", 12.0) or 12.0),
+                )
+                if isinstance(utm_verify, dict):
+                    approved = bool(utm_verify.get("approved"))
+                    retryable_conflict = _utm_verify_retryable_conflict(utm_verify)
+                    SIM.set_approval(payload.uav_id, utm_verify)
+                    checks = utm_verify.get("checks") if isinstance(utm_verify.get("checks"), dict) else {}
+                    route_bounds = checks.get("route_bounds") if isinstance(checks, dict) and isinstance(checks.get("route_bounds"), dict) else {}
+                    nfz = checks.get("no_fly_zone") if isinstance(checks, dict) and isinstance(checks.get("no_fly_zone"), dict) else {}
+                    geofence_ok = route_bounds.get("ok")
+                    if geofence_ok is None:
+                        geofence_ok = route_bounds.get("geofence_ok")
+                    if geofence_ok is None:
+                        geofence_ok = route_bounds.get("bounds_ok")
+                    session_geofence = {
+                        "ok": bool(geofence_ok is True and (nfz.get("ok") is True or nfz.get("ok") is None)),
+                        "geofence_ok": geofence_ok is True,
+                        "bounds_ok": geofence_ok is True,
+                        "airspace_segment": payload.airspace_segment,
+                        "no_fly_zone": dict(nfz) if isinstance(nfz, dict) else None,
+                    }
+                    SIM.set_geofence_result(payload.uav_id, session_geofence)
+                    _save_uav_utm_session(
+                        user_id=resolved_user_id,
+                        uav_id=payload.uav_id,
+                        utm_approval=utm_verify,
+                        utm_geofence_result=session_geofence,
+                    )
+                    _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+                    if approved:
+                        mission_save = _save_verified_mission_and_paths(
+                            user_id=resolved_user_id,
+                            uav_id=payload.uav_id,
+                            route_id=route_id,
+                            waypoints=verify_waypoints,
+                            approval=utm_verify,
+                            source="replan_via_utm_nfz",
+                            copy_agent_if_missing=False,
+                        )
+                        if isinstance(mission_save, dict):
+                            approved_route_records = mission_save.get("approved_route_records") if isinstance(mission_save.get("approved_route_records"), dict) else None
+                            if approved_route_records:
+                                rr["mission"] = mission_save.get("mission")
+
+            auto_replan_utm_loop.append(
+                {
+                    "round": round_index,
+                    "route_id": route_id,
+                    "waypoints_total": len(verify_waypoints),
+                    "inserted_waypoints_count": inserted_count,
+                    "los_prune_deletions_count": len(los_prune_deletions),
+                    "approved": approved if payload.auto_utm_verify else None,
+                    "retryable_conflict": retryable_conflict if payload.auto_utm_verify else None,
+                    "route_repeated": seen_before,
+                }
+            )
+
+            rr["utm_verify"] = utm_verify
+            rr["approved_route_records"] = approved_route_records
+            rr["auto_replan_utm_loop"] = auto_replan_utm_loop
+
+            if not payload.auto_utm_verify or approved:
+                break
+            if not retryable_conflict or seen_before:
+                break
+
+            conflict_fb = _utm_nfz_conflict_feedback(utm_verify)
+            corrective_prompt = (
+                f"{payload.user_request}. Continue two-step replanning: insert detour points, then prune inserted points with LoS. "
+                f"Must pass UTM checks and minimize inserted waypoints. "
+                f"{('Resolve remaining conflict at ' + conflict_fb['summary'] + '.') if conflict_fb.get('summary') else ''}"
+            ).strip()
+            sim_now = SIM.status(payload.uav_id)
+            current_waypoints = [dict(w) for w in sim_now.get("waypoints", [])] if isinstance(sim_now.get("waypoints"), list) else verify_waypoints
+            result = _invoke_replan(
+                user_request=corrective_prompt,
+                route_id=str(sim_now.get("route_id", route_id)),
+                waypoints=current_waypoints,
+            )
+    sync = _log_uav_action(
+        "replan_via_utm_nfz",
+        payload={**payload.model_dump(), "user_id": resolved_user_id},
+        result=result,
+        entity_id=payload.uav_id,
+    )
+    if isinstance(result, dict):
+        result["sync"] = sync
+        result["session"] = _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+    return result
+
+
+@router.post("/api/uav/agent/chat")
+def post_uav_agent_chat(payload: UavAgentChatPayload) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=None)
+    prompt = (payload.prompt or "").strip()
+    sim_before = SIM.status(payload.uav_id)
+    route_id = payload.route_id or str(sim_before.get("route_id", "route-1"))
+    input_waypoints = [_dump_waypoint_payload_model(w) for w in payload.waypoints] if payload.waypoints else None
+    effective_waypoints = input_waypoints if input_waypoints else (
+        list(sim_before.get("waypoints", [])) if isinstance(sim_before.get("waypoints"), list) else []
+    )
+    if len(effective_waypoints) < 2:
+        result = {"status": "error", "error": "route_requires_at_least_two_waypoints"}
+        sync = _log_uav_action("agent_chat", payload={**payload.model_dump(), "user_id": resolved_user_id}, result=result, entity_id=payload.uav_id)
+        return {"status": "error", "sync": sync, "result": result}
+    SIM.plan_route(payload.uav_id, route_id=route_id, waypoints=effective_waypoints)
+
+    def _apply_agent_chat_side_effects(agent_result: Dict[str, Any]) -> None:
+        uav_after = agent_result.get("uav") if isinstance(agent_result.get("uav"), dict) else {}
+        after_waypoints = [dict(w) for w in uav_after.get("waypoints", [])] if isinstance(uav_after.get("waypoints"), list) else []
+        after_route_id = str(uav_after.get("route_id", route_id) or route_id)
+        replan_rec = agent_result.get("replan") if isinstance(agent_result.get("replan"), dict) else {}
+        replan_status = str(replan_rec.get("status", "") or "").strip().lower()
+        tool_trace = agent_result.get("toolTrace") if isinstance(agent_result.get("toolTrace"), list) else []
+        trace_replan_ok = any(
+            isinstance(t, dict)
+            and str(t.get("tool", "")).strip() == "uav_replan_route_via_utm_nfz"
+            and str(t.get("status", "")).strip().lower() == "success"
+            for t in tool_trace
+        )
+        if after_waypoints and (replan_status == "success" or trace_replan_ok):
+            _record_planned_route_history(
+                uav_id=payload.uav_id,
+                route_id=after_route_id,
+                waypoints=after_waypoints,
+                source="agent_copilot",
+                metadata={"auto_verify": payload.auto_verify, "optimization_profile": payload.optimization_profile, "user_id": resolved_user_id},
+            )
+        utm_verify = agent_result.get("utmVerify") if isinstance(agent_result.get("utmVerify"), dict) else None
+        if not isinstance(utm_verify, dict):
+            return
+        SIM.set_approval(payload.uav_id, utm_verify)
+        checks = utm_verify.get("checks") if isinstance(utm_verify.get("checks"), dict) else {}
+        route_bounds = checks.get("route_bounds") if isinstance(checks, dict) and isinstance(checks.get("route_bounds"), dict) else {}
+        nfz = checks.get("no_fly_zone") if isinstance(checks, dict) and isinstance(checks.get("no_fly_zone"), dict) else {}
+        geofence_ok = route_bounds.get("ok")
+        if geofence_ok is None:
+            geofence_ok = route_bounds.get("geofence_ok")
+        if geofence_ok is None:
+            geofence_ok = route_bounds.get("bounds_ok")
+        session_geofence = {
+            "ok": bool(geofence_ok is True and (nfz.get("ok") is True or nfz.get("ok") is None)),
+            "geofence_ok": geofence_ok is True,
+            "bounds_ok": geofence_ok is True,
+            "airspace_segment": payload.airspace_segment,
+            "no_fly_zone": dict(nfz) if isinstance(nfz, dict) else None,
+        }
+        SIM.set_geofence_result(payload.uav_id, session_geofence)
+        _save_uav_utm_session(
+            user_id=resolved_user_id,
+            uav_id=payload.uav_id,
+            utm_approval=utm_verify,
+            utm_geofence_result=session_geofence,
+        )
+        _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+        sim_now = SIM.status(payload.uav_id)
+        mission_save = _save_verified_mission_and_paths(
+            user_id=resolved_user_id,
+            uav_id=payload.uav_id,
+            route_id=str(sim_now.get("route_id", after_route_id) or after_route_id),
+            waypoints=[dict(w) for w in sim_now.get("waypoints", [])] if isinstance(sim_now.get("waypoints"), list) else after_waypoints,
+            approval=utm_verify,
+            source="agent_chat_auto_verify",
+            copy_agent_if_missing=False,
+        )
+        if isinstance(mission_save, dict):
+            agent_result["mission"] = mission_save.get("mission")
+            agent_result["approved_route_records"] = mission_save.get("approved_route_records")
+
+    workflow = run_copilot_workflow(
+        {
+            "uav_id": payload.uav_id,
+            "airspace_segment": payload.airspace_segment,
+            "prompt": prompt,
+            "route_id": route_id,
+            "effective_waypoints": effective_waypoints,
+            "optimization_profile": payload.optimization_profile,
+            "auto_verify": payload.auto_verify,
+            "auto_network_optimize": payload.auto_network_optimize,
+            "network_mode": payload.network_mode,
+        }
+    )
+    if workflow.get("status") != "success" or not isinstance(workflow.get("result"), dict):
+        fallback = _run_uav_agent_chat_heuristic(payload)
+        if fallback.get("status") == "success" and isinstance(fallback.get("result"), dict):
+            _apply_agent_chat_side_effects(fallback["result"])
+            fallback["session"] = _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+        return fallback
+    agent_result = workflow["result"]
+    if isinstance(agent_result, dict):
+        _apply_agent_chat_side_effects(agent_result)
+    sync = _log_uav_action("agent_chat", payload={**payload.model_dump(), "user_id": resolved_user_id}, result=agent_result, entity_id=payload.uav_id)
+    return {
+        "status": "success",
+        "sync": sync,
+        "session": _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id),
+        "result": agent_result,
+    }
+
+
+@router.post("/api/uav/sim/geofence-submit")
+def post_geofence_submit(uav_id: str = "uav-1", airspace_segment: str = "sector-A3", user_id: Optional[str] = None) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=user_id)
+    utm_mirror_sync = _refresh_utm_mirror_from_real_service(airspace_segment=airspace_segment)
+    invoke_payload = {"uav_id": uav_id, "airspace_segment": airspace_segment}
+    log_payload = {**invoke_payload, "user_id": resolved_user_id}
+    result = uav_submit_route_to_utm_geofence_check.invoke(invoke_payload)
+    if isinstance(result, dict):
+        result_obj = result.get("result") if isinstance(result.get("result"), dict) else {}
+        geofence = result_obj.get("geofence") if isinstance(result_obj, dict) and isinstance(result_obj.get("geofence"), dict) else None
+        if isinstance(geofence, dict):
+            _save_uav_utm_session(user_id=resolved_user_id, uav_id=uav_id, utm_geofence_result=geofence)
+            _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=uav_id)
+    sync = _log_uav_action("geofence_submit", payload=log_payload, result=result, entity_id=uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+        result["session"] = _get_uav_utm_session(user_id=resolved_user_id, uav_id=uav_id)
+        result["utmMirrorSync"] = utm_mirror_sync
+    return result
+
+
+@router.post("/api/uav/sim/request-approval")
+def post_request_approval(payload: ApprovalPayload) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=payload.user_id)
+    route_id_for_dss, _route_waypoints_for_check = _sim_waypoints(payload.uav_id)
+    _enforce_uav_capability_limits_or_raise(
+        uav_id=payload.uav_id,
+        requested_speed_mps=payload.requested_speed_mps,
+        waypoints=_route_waypoints_for_check,
+        context="uav_request_approval",
+    )
+    start_at, end_at = _default_time_window()
+    effective_start_at = payload.planned_start_at or start_at
+    effective_end_at = payload.planned_end_at or end_at
+    dss_intent_result = _upsert_local_dss_intent_for_uav(
+        user_id=resolved_user_id,
+        uav_id=payload.uav_id,
+        route_id=route_id_for_dss,
+        waypoints=[dict(w) for w in _route_waypoints_for_check if isinstance(w, dict)],
+        airspace_segment=payload.airspace_segment,
+        conflict_policy=payload.dss_conflict_policy,
+        planned_start_at=effective_start_at,
+        planned_end_at=effective_end_at,
+    )
+    _save_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id, utm_dss_result=dss_intent_result if isinstance(dss_intent_result, dict) else None)
+    blocking_conflicts = (
+        dss_intent_result.get("blocking_conflicts")
+        if isinstance(dss_intent_result, dict) and isinstance(dss_intent_result.get("blocking_conflicts"), list)
+        else []
+    )
+    if isinstance(dss_intent_result, dict) and (
+        dss_intent_result.get("status") == "rejected" or len(blocking_conflicts) > 0
+    ):
+        result = {
+            "status": "error",
+            "error": "dss_strategic_conflict",
+            "message": "Approval blocked by DSS strategic conflict policy",
+            "dss_intent_result": dss_intent_result,
+        }
+        sync = _log_uav_action(
+            "request_approval_blocked_dss_conflict",
+            payload={**payload.model_dump(), "user_id": resolved_user_id, "route_id": route_id_for_dss},
+            result={"blocking_conflicts": len(blocking_conflicts), "status": dss_intent_result.get("status")},
+            entity_id=payload.uav_id,
+        )
+        return {
+            "status": "error",
+            "sync": sync,
+            "session": _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id),
+            "result": result,
+        }
+    utm_mirror_sync = _refresh_utm_mirror_from_real_service(
+        airspace_segment=payload.airspace_segment,
+        operator_license_id=payload.operator_license_id,
+    )
+    req = {
+        "uav_id": payload.uav_id,
+        "airspace_segment": payload.airspace_segment,
+        "operator_license_id": payload.operator_license_id,
+        "required_license_class": payload.required_license_class,
+        "requested_speed_mps": payload.requested_speed_mps,
+        "planned_start_at": effective_start_at,
+        "planned_end_at": effective_end_at,
+    }
+    result = uav_request_utm_approval.invoke(req)
+    mission_save = None
+    if isinstance(result, dict):
+        result_obj = result.get("result") if isinstance(result.get("result"), dict) else {}
+        approval = result_obj.get("approval") if isinstance(result_obj, dict) and isinstance(result_obj.get("approval"), dict) else None
+        uav_obj = result_obj.get("uav") if isinstance(result_obj, dict) and isinstance(result_obj.get("uav"), dict) else {}
+        geofence = uav_obj.get("utm_geofence_result") if isinstance(uav_obj, dict) and isinstance(uav_obj.get("utm_geofence_result"), dict) else None
+        if isinstance(approval, dict) or isinstance(geofence, dict):
+            _save_uav_utm_session(
+                user_id=resolved_user_id,
+                uav_id=payload.uav_id,
+                utm_approval=approval if isinstance(approval, dict) else None,
+                utm_geofence_result=geofence if isinstance(geofence, dict) else None,
+                utm_dss_result=dss_intent_result if isinstance(dss_intent_result, dict) else None,
+            )
+            _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+        if isinstance(approval, dict):
+            waypoints = [dict(w) for w in uav_obj.get("waypoints", [])] if isinstance(uav_obj, dict) and isinstance(uav_obj.get("waypoints"), list) else []
+            route_id = str(uav_obj.get("route_id", "route-1")) if isinstance(uav_obj, dict) else "route-1"
+            mission_save = _save_verified_mission_and_paths(
+                user_id=resolved_user_id,
+                uav_id=payload.uav_id,
+                route_id=route_id,
+                waypoints=waypoints,
+                approval=approval,
+                source="request_approval",
+                planned_start_at=req.get("planned_start_at"),
+                planned_end_at=req.get("planned_end_at"),
+                copy_agent_if_missing=False,
+            )
+    sync = _log_uav_action("request_approval", payload={**req, "user_id": resolved_user_id}, result=result, entity_id=payload.uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+        result["session"] = _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+        result["utmMirrorSync"] = utm_mirror_sync
+        result["dss_intent_result"] = dss_intent_result
+        if mission_save is not None:
+            result["mission"] = mission_save.get("mission")
+            result["approved_route_records"] = mission_save.get("approved_route_records")
+    return result
+
+
+@router.post("/api/uav/sim/utm-submit-mission")
+def post_utm_submit_mission(payload: ApprovalPayload) -> Dict[str, Any]:
+    """Backend-orchestrated UTM workflow: route checks -> geofence submit -> verify -> approval.
+
+    This keeps session/DB updates and UTM actions on the backend instead of relying on frontend step ordering.
+    """
+    from .api_routes_utm import route_checks, verify_from_uav
+
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=payload.user_id)
+    utm_mirror_sync = _refresh_utm_mirror_from_real_service(
+        airspace_segment=payload.airspace_segment,
+        operator_license_id=payload.operator_license_id,
+    )
+    route_checks_payload = RouteCheckPayload(
+        user_id=resolved_user_id,
+        uav_id=payload.uav_id,
+        airspace_segment=payload.airspace_segment,
+        route_id=None,
+        requested_speed_mps=payload.requested_speed_mps,
+        operator_license_id=payload.operator_license_id,
+    )
+    route_checks_result = route_checks(route_checks_payload)
+    geofence_result = post_geofence_submit(
+        uav_id=payload.uav_id,
+        airspace_segment=payload.airspace_segment,
+        user_id=resolved_user_id,
+    )
+    verify_payload = VerifyFromUavPayload(
+        **{
+            **payload.model_dump(),
+            "user_id": resolved_user_id,
+        }
+    )
+    verify_result = verify_from_uav(verify_payload)
+
+    verify_ok = False
+    if isinstance(verify_result, dict):
+        vr = verify_result.get("result")
+        if isinstance(vr, dict):
+            verify_ok = vr.get("approved") is True
+
+    if verify_ok:
+        approval_payload = ApprovalPayload(**{**payload.model_dump(), "user_id": resolved_user_id})
+        approval_result = post_request_approval(approval_payload)
+    else:
+        approval_result = {
+            "status": "skipped",
+            "reason": "verify_not_approved",
+            "session": _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id),
+        }
+
+    approval_obj = None
+    if isinstance(approval_result, dict):
+        ar = approval_result.get("result")
+        if isinstance(ar, dict):
+            inner = ar.get("result") if isinstance(ar.get("result"), dict) else None
+            if isinstance(inner, dict) and isinstance(inner.get("approval"), dict):
+                approval_obj = inner.get("approval")
+            elif isinstance(ar.get("approval"), dict):
+                approval_obj = ar.get("approval")
+
+    session_now = _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+    aggregate = {
+        "workflow": "utm_submit_mission_auto",
+        "user_id": resolved_user_id,
+        "uav_id": payload.uav_id,
+        "airspace_segment": payload.airspace_segment,
+        "utm_mirror_sync": utm_mirror_sync,
+        "route_checks": route_checks_result,
+        "geofence_submit": geofence_result,
+        "verify_from_uav": verify_result,
+        "approval_request": approval_result,
+        "approved": bool(isinstance(approval_obj, dict) and approval_obj.get("approved") is True),
+        "session": session_now,
+    }
+    sync = _log_uav_action(
+        "utm_submit_mission_auto",
+        payload={**payload.model_dump(), "user_id": resolved_user_id},
+        result={
+            "approved": aggregate["approved"],
+            "uav_id": payload.uav_id,
+            "user_id": resolved_user_id,
+            "airspace_segment": payload.airspace_segment,
+        },
+        entity_id=payload.uav_id,
+    )
+    return {"status": "success", "sync": sync, "result": aggregate}
+
+
+@router.post("/api/uav/sim/launch")
+def post_launch(uav_id: str = "uav-1", user_id: Optional[str] = None) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=user_id)
+    _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=uav_id)
+    pre = SIM.status(uav_id)
+    if bool(pre.get("armed")):
+        warning = "UAV already launched. No need to launch again."
+        result = {
+            "status": "warning",
+            "agent": "uav",
+            "tool": "uav_launch",
+            "warning": warning,
+            "result": pre,
+        }
+        sync = _log_uav_action(
+            "launch_skipped_already_launched",
+            payload={"uav_id": uav_id, "user_id": resolved_user_id, "reason": "already_launched"},
+            result={"warning": warning, "flight_phase": pre.get("flight_phase"), "active": pre.get("active"), "armed": pre.get("armed")},
+            entity_id=uav_id,
+        )
+        result["sync"] = sync
+        return result
+    _enforce_flight_control_gate_or_raise(uav_id=uav_id, action="launch", user_id=resolved_user_id)
+    invoke_payload = {"uav_id": uav_id, "require_utm_approval": True}
+    log_payload = {**invoke_payload, "user_id": resolved_user_id}
+    result = uav_launch.invoke(invoke_payload)
+    if isinstance(result, dict) and result.get("status") == "success":
+        _touch_mission_execution(user_id=resolved_user_id, uav_id=uav_id, action="launch")
+    sync = _log_uav_action("launch", payload=log_payload, result=result, entity_id=uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+    return result
+
+
+@router.post("/api/uav/sim/step")
+def post_step(payload: StepPayload) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=payload.user_id)
+    _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+    _enforce_flight_control_gate_or_raise(uav_id=payload.uav_id, action="step", user_id=resolved_user_id)
+    result = uav_sim_step.invoke({"uav_id": payload.uav_id, "ticks": payload.ticks})
+    if isinstance(result, dict) and result.get("status") == "success":
+        _touch_mission_execution(user_id=resolved_user_id, uav_id=payload.uav_id, action="step")
+    sync = _log_uav_action("step", payload={**payload.model_dump(), "user_id": resolved_user_id}, result=result, entity_id=payload.uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+    return result
+
+
+@router.post("/api/uav/sim/hold")
+def post_hold(payload: HoldPayload) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=payload.uav_id, user_id=payload.user_id)
+    _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=payload.uav_id)
+    _enforce_flight_control_gate_or_raise(uav_id=payload.uav_id, action="hold", user_id=resolved_user_id)
+    result = uav_hold.invoke({"uav_id": payload.uav_id, "reason": payload.reason})
+    if isinstance(result, dict) and result.get("status") == "success":
+        _touch_mission_execution(user_id=resolved_user_id, uav_id=payload.uav_id, action="hold")
+    sync = _log_uav_action("hold", payload={**payload.model_dump(), "user_id": resolved_user_id}, result=result, entity_id=payload.uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+    return result
+
+
+@router.post("/api/uav/sim/resume")
+def post_resume(uav_id: str = "uav-1", user_id: Optional[str] = None) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=user_id)
+    _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=uav_id)
+    _enforce_flight_control_gate_or_raise(uav_id=uav_id, action="resume", user_id=resolved_user_id)
+    invoke_payload = {"uav_id": uav_id}
+    log_payload = {**invoke_payload, "user_id": resolved_user_id}
+    result = uav_resume.invoke(invoke_payload)
+    if isinstance(result, dict) and result.get("status") == "success":
+        _touch_mission_execution(user_id=resolved_user_id, uav_id=uav_id, action="resume")
+    sync = _log_uav_action("resume", payload=log_payload, result=result, entity_id=uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+    return result
+
+
+@router.post("/api/uav/sim/rth")
+def post_return_to_home(uav_id: str = "uav-1", user_id: Optional[str] = None) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=user_id)
+    _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=uav_id)
+    _enforce_flight_control_gate_or_raise(uav_id=uav_id, action="rth", user_id=resolved_user_id)
+    invoke_payload = {"uav_id": uav_id}
+    log_payload = {**invoke_payload, "user_id": resolved_user_id}
+    result = uav_return_to_home.invoke(invoke_payload)
+    if isinstance(result, dict) and result.get("status") == "success":
+        _touch_mission_execution(user_id=resolved_user_id, uav_id=uav_id, action="rth")
+    sync = _log_uav_action("rth", payload=log_payload, result=result, entity_id=uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+    return result
+
+
+@router.post("/api/uav/sim/land")
+def post_land(uav_id: str = "uav-1", user_id: Optional[str] = None) -> Dict[str, Any]:
+    resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=user_id)
+    _sync_sim_utm_from_session(user_id=resolved_user_id, uav_id=uav_id)
+    _enforce_flight_control_gate_or_raise(uav_id=uav_id, action="land", user_id=resolved_user_id)
+    invoke_payload = {"uav_id": uav_id}
+    log_payload = {**invoke_payload, "user_id": resolved_user_id}
+    result = uav_land.invoke(invoke_payload)
+    if isinstance(result, dict) and result.get("status") == "success":
+        _touch_mission_execution(user_id=resolved_user_id, uav_id=uav_id, action="land")
+    sync = _log_uav_action("land", payload=log_payload, result=result, entity_id=uav_id)
+    if isinstance(result, dict):
+        result["sync"] = sync
+    return result

@@ -1,0 +1,12 @@
+{
+  "repoPath": "/home/dang/agent_test",
+  "lastCommit": "b6fdfe2e44518bac37f18d176b4726b0e7529cdb",
+  "indexedAt": "2026-02-26T16:16:47.742Z",
+  "stats": {
+    "files": 116,
+    "nodes": 2444,
+    "edges": 6787,
+    "communities": 441,
+    "processes": 212
+  }
+}

@@ -18,6 +18,16 @@ type UtmCheckResults = {
   verify?: Record<string, unknown>;
   corridor?: Record<string, unknown>;
 };
+type UtmSourceInfo = { mode?: string; active?: string; meta?: Record<string, unknown> | null };
+type AgentActionLogItem = {
+  id: number;
+  action: string;
+  entity_id?: unknown;
+  payload?: unknown;
+  result?: unknown;
+  created_at: string;
+  agent: "uav" | "utm";
+};
 
 function isObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null;
@@ -99,6 +109,91 @@ function yesNoBadge(ok: unknown): React.ReactNode {
   );
 }
 
+function renderUtmDecisionReadable(decisionInput: unknown): React.ReactNode {
+  const decision = asRecord(decisionInput);
+  if (!decision) return null;
+  const reasons = Array.isArray(decision.reasons) ? (decision.reasons as unknown[]).map(String) : [];
+  const messages = Array.isArray(decision.messages) ? (decision.messages as unknown[]).map(String) : [];
+  const suggestions = Array.isArray(decision.suggestions) ? (decision.suggestions as unknown[]).map(String) : [];
+  const nfzSummary = asRecord(decision.nfz_conflict_summary);
+  const wpIds = Array.isArray(nfzSummary?.waypoints) ? (nfzSummary!.waypoints as unknown[]).map(String) : [];
+  const segIds = Array.isArray(nfzSummary?.segments) ? (nfzSummary!.segments as unknown[]).map(String) : [];
+  const status = String(decision.status ?? "-");
+  const approved = status === "approved";
+  const conciseMsg = messages.find((m) => m.trim()) ?? "";
+  const conciseSuggestion = suggestions.find((s) => s.trim()) ?? "";
+  return (
+    <div style={{ border: `1px solid ${approved ? "#abefc6" : "#fecdca"}`, borderRadius: 8, background: approved ? "#ecfdf3" : "#fef3f2", padding: 8, display: "grid", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{
+          display: "inline-block",
+          borderRadius: 999,
+          padding: "2px 8px",
+          fontSize: 11,
+          fontWeight: 700,
+          background: approved ? "#d1fadf" : "#fee4e2",
+          color: approved ? "#027a48" : "#b42318",
+          border: `1px solid ${approved ? "#abefc6" : "#fecdca"}`,
+        }}>
+          {status.toUpperCase()}
+        </span>
+        {reasons.slice(0, 3).map((r, i) => (
+          <span key={`utm-decision-reason-${i}`} style={{ fontSize: 11, color: "#667085", border: "1px solid #d0d5dd", borderRadius: 999, padding: "2px 8px", background: "#fff" }}>
+            {r}
+          </span>
+        ))}
+        {(wpIds.length || segIds.length) ? (
+          <span style={{ fontSize: 11, color: "#b42318", border: "1px solid #fecdca", borderRadius: 999, padding: "2px 8px", background: "#fff" }}>
+            {wpIds.length ? `WP ${wpIds.join(",")}` : ""}{wpIds.length && segIds.length ? " • " : ""}{segIds.length ? `SEG ${segIds.join(",")}` : ""}
+          </span>
+        ) : null}
+      </div>
+      {conciseMsg ? <div style={{ fontSize: 12, color: "#344054" }}>{conciseMsg}</div> : null}
+      {!approved && conciseSuggestion ? <div style={{ fontSize: 11, color: "#b54708" }}>{conciseSuggestion}</div> : null}
+    </div>
+  );
+}
+
+function summarizeInteraction(item: AgentActionLogItem): string {
+  const result = asRecord(item.result);
+  const payload = asRecord(item.payload);
+  if (item.action.includes("verify")) {
+    const approved = result?.approved;
+    const decision = asRecord(result?.decision);
+    const reasons = Array.isArray(decision?.reasons) ? (decision!.reasons as unknown[]).map(String).join(", ") : "";
+    const routeSource = typeof result?.route_source === "string" ? String(result.route_source) : "";
+    return `verify ${approved === true ? "approved" : approved === false ? "rejected" : "done"}${routeSource ? ` • route=${routeSource}` : ""}${reasons ? ` • ${reasons}` : ""}`;
+  }
+  if (item.action.includes("route_check") || item.action === "route_checks") {
+    const geofence = asRecord(result?.geofence);
+    const geofenceOk = geofence?.geofence_ok;
+    const nfz = asRecord(result?.no_fly_zone);
+    return `route check • route_bounds=${String(geofenceOk)} • nfz=${String(nfz?.ok)}`;
+  }
+  if (item.action.includes("approval")) {
+    const approved = result?.approved ?? asRecord(result?.result)?.approved;
+    return `approval ${approved === true ? "approved" : approved === false ? "rejected" : "updated"}`;
+  }
+  if (item.action.includes("nfz")) {
+    const zoneId = String(asRecord(result?.result)?.zone_id ?? result?.zone_id ?? payload?.zone_id ?? payload?.reason ?? "");
+    return `no-fly-zone update${zoneId ? ` • ${zoneId}` : ""}`;
+  }
+  if (item.action.includes("weather")) {
+    return `weather update/check`;
+  }
+  if (item.action.includes("license")) {
+    const lic = String(payload?.operator_license_id ?? asRecord(result?.result)?.operator_license_id ?? "");
+    return `license ${item.action.includes("check") ? "check" : "update"}${lic ? ` • ${lic}` : ""}`;
+  }
+  if (item.action.includes("corridor")) {
+    return "corridor reservation";
+  }
+  if (item.action === "uav_live_ingest" || item.action === "utm_live_ingest") {
+    return "live data ingested";
+  }
+  return item.action.replaceAll("_", " ");
+}
+
 export function UtmPage() {
   const sharedInit = getSharedPageState();
   const [apiBase, setApiBase] = useState(sharedInit.utmApiBase || "http://127.0.0.1:8021");
@@ -116,6 +211,7 @@ export function UtmPage() {
 
   const [licenseId, setLicenseId] = useState("op-001");
   const [licenseClass, setLicenseClass] = useState("VLOS");
+  const [licenseUavSizeClass, setLicenseUavSizeClass] = useState("middle");
   const [licenseExpiry, setLicenseExpiry] = useState("2099-01-01T00:00");
   const [licenseActive, setLicenseActive] = useState(true);
   const [requiredLicenseClass, setRequiredLicenseClass] = useState("VLOS");
@@ -126,27 +222,85 @@ export function UtmPage() {
   const [liveRefresh, setLiveRefresh] = useState(false);
   const [liveRefreshSec, setLiveRefreshSec] = useState("3");
   const [networkMap, setNetworkMap] = useState<{ bs: MissionBs[]; coverage: MissionCoverage[]; tracks: MissionTrack[] }>({ bs: [], coverage: [], tracks: [] });
+  const [nfzDraftX, setNfzDraftX] = useState("150");
+  const [nfzDraftY, setNfzDraftY] = useState("110");
   const [nfzDraftRadiusM, setNfzDraftRadiusM] = useState("30");
   const [nfzDraftReason, setNfzDraftReason] = useState("operator_defined");
   const [nfzDraftZMin, setNfzDraftZMin] = useState("0");
   const [nfzDraftZMax, setNfzDraftZMax] = useState("120");
-  const [logViewMode, setLogViewMode] = useState<"readable" | "raw">("readable");
-  const [selectedLogKey, setSelectedLogKey] = useState<keyof UtmCheckResults>("route");
   const [backendRevisions, setBackendRevisions] = useState<{ uav: number; utm: number; network: number }>({ uav: -1, utm: -1, network: -1 });
+  const [utmSourceInfo, setUtmSourceInfo] = useState<UtmSourceInfo | null>(null);
+  const [interactionLog, setInteractionLog] = useState<AgentActionLogItem[]>([]);
+  const [interactionLogClearedAt, setInteractionLogClearedAt] = useState<string | null>(null);
+  const [utmLiveJson, setUtmLiveJson] = useState(
+    JSON.stringify(
+      {
+        source: "ops_utm_feed",
+        source_ref: "utm-prod-bridge",
+        observed_at: "2026-02-24T20:00:00Z",
+        airspace_segment: "sector-A3",
+        weather: { wind_mps: 7, visibility_km: 10, precip_mmph: 0, storm_alert: false },
+        no_fly_zones: [{ zone_id: "nfz-top-live", cx: 150, cy: 110, radius_m: 35, z_min: 0, z_max: 120, reason: "hospital_helipad" }],
+      },
+      null,
+      2,
+    ),
+  );
 
   const loadAll = async () => {
     setBusy(true);
     setMsg("");
     try {
-      const [simRes, wRes] = await Promise.all([
-        fetch(`${normalizeBaseUrl(uavApiBase)}/api/uav/sim/state?uav_id=${encodeURIComponent(simUavId)}`),
+      const simStateQs = new URLSearchParams({ uav_id: simUavId });
+      if (licenseId.trim()) simStateQs.set("operator_license_id", licenseId.trim());
+      const [simRes, wRes, srcRes, uavSyncRes, utmSyncRes] = await Promise.all([
+        fetch(`${normalizeBaseUrl(uavApiBase)}/api/uav/sim/state?${simStateQs.toString()}`),
         fetch(`${normalizeBaseUrl(apiBase)}/api/utm/weather?airspace_segment=${encodeURIComponent(airspace)}`),
+        fetch(`${normalizeBaseUrl(apiBase)}/api/utm/live/source`),
+        fetch(`${normalizeBaseUrl(uavApiBase)}/api/uav/sync?limit_actions=12`),
+        fetch(`${normalizeBaseUrl(apiBase)}/api/utm/sync?limit_actions=18`),
       ]);
       const simData = await simRes.json();
       const wData = await wRes.json();
+      const srcData = await srcRes.json();
+      const uavSyncData = await uavSyncRes.json();
+      const utmSyncData = await utmSyncRes.json();
       if (!simRes.ok || !isObject(simData)) throw new Error(String(asRecord(simData)?.detail ?? "Simulator state request failed"));
       if (!wRes.ok || !isObject(wData)) throw new Error(String(asRecord(wData)?.detail ?? "Weather request failed"));
       setState(simData as UavSimState);
+      setUtmSourceInfo(asRecord((srcData as Record<string, unknown>)?.result) as UtmSourceInfo | null);
+      const uavRecent = Array.isArray(asRecord(asRecord(uavSyncData)?.result)?.recentActions)
+        ? (asRecord(asRecord(uavSyncData)?.result)?.recentActions as unknown[])
+            .filter(isObject)
+            .map((r) => ({
+              id: Number((r as Record<string, unknown>).id ?? 0),
+              action: String((r as Record<string, unknown>).action ?? ""),
+              entity_id: (r as Record<string, unknown>).entity_id,
+              payload: (r as Record<string, unknown>).payload,
+              result: (r as Record<string, unknown>).result,
+              created_at: String((r as Record<string, unknown>).created_at ?? ""),
+              agent: "uav" as const,
+            }))
+        : [];
+      const utmRecent = Array.isArray(asRecord(asRecord(utmSyncData)?.result)?.recentActions)
+        ? (asRecord(asRecord(utmSyncData)?.result)?.recentActions as unknown[])
+            .filter(isObject)
+            .map((r) => ({
+              id: Number((r as Record<string, unknown>).id ?? 0),
+              action: String((r as Record<string, unknown>).action ?? ""),
+              entity_id: (r as Record<string, unknown>).entity_id,
+              payload: (r as Record<string, unknown>).payload,
+              result: (r as Record<string, unknown>).result,
+              created_at: String((r as Record<string, unknown>).created_at ?? ""),
+              agent: "utm" as const,
+            }))
+        : [];
+      const merged = [...utmRecent, ...uavRecent]
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      const filtered = interactionLogClearedAt
+        ? merged.filter((r) => String(r.created_at) >= interactionLogClearedAt)
+        : merged;
+      setInteractionLog(filtered.slice(0, 24));
       const result = asRecord((wData as Record<string, unknown>).result);
       setWeatherCheck(result);
       const currentWeather = asRecord(result?.weather);
@@ -160,6 +314,7 @@ export function UtmPage() {
       const lic = licenses ? asRecord(licenses[licenseId]) : null;
       if (lic) {
         if (typeof lic.license_class === "string") setLicenseClass(lic.license_class);
+        if (typeof lic.uav_size_class === "string") setLicenseUavSizeClass(lic.uav_size_class);
         if (typeof lic.active === "boolean") setLicenseActive(lic.active);
         if (typeof lic.expires_at === "string") {
           const local = isoUtcToLocalInput(lic.expires_at);
@@ -266,7 +421,7 @@ export function UtmPage() {
       })();
     }, 1500);
     return () => window.clearInterval(id);
-  }, [busy, apiBase, uavApiBase, backendRevisions, simUavId, airspace]);
+  }, [busy, apiBase, uavApiBase, backendRevisions, simUavId, airspace, interactionLogClearedAt]);
 
   const postApi = async (path: string, body: unknown, successMsg: string) => {
     setBusy(true);
@@ -335,21 +490,34 @@ export function UtmPage() {
     }
     await postApi(
       "/api/utm/license",
-      { operator_license_id: licenseId, license_class: licenseClass, expires_at: expiresIso ?? "2099-01-01T00:00:00Z", active: licenseActive },
+      {
+        operator_license_id: licenseId,
+        license_class: licenseClass,
+        uav_size_class: licenseUavSizeClass,
+        expires_at: expiresIso ?? "2099-01-01T00:00:00Z",
+        active: licenseActive,
+      },
       "License registered",
     );
   };
 
   const runRouteChecks = async () => {
     const speed = Number.parseFloat(requestedSpeedMps);
+    const uavRec = asRecord(state?.uav);
+    const routeWaypoints = Array.isArray(uavRec?.waypoints)
+      ? (uavRec!.waypoints as unknown[]).filter(isObject).map((w) => ({ x: Number((w as Record<string, unknown>).x ?? 0), y: Number((w as Record<string, unknown>).y ?? 0), z: Number((w as Record<string, unknown>).z ?? 0) }))
+      : [];
     const data = await postApiResult("/api/utm/checks/route", {
       uav_id: simUavId,
       airspace_segment: airspace,
       requested_speed_mps: Number.isFinite(speed) ? speed : 12,
+      operator_license_id: licenseId,
+      route_id: typeof uavRec?.route_id === "string" ? uavRec.route_id : undefined,
+      waypoints: routeWaypoints.length ? routeWaypoints : undefined,
     });
     if (!data) return;
     setUtmChecks((prev) => ({ ...prev, route: asRecord(data.result) ?? {} }));
-    setMsg("Route/geofence/NFZ/regulation checks completed");
+    setMsg("Route bounds/NFZ/regulation checks completed");
     await loadAll();
   };
 
@@ -357,6 +525,7 @@ export function UtmPage() {
     const data = await postApiResult("/api/utm/checks/time-window", {
       planned_start_at: localInputToIsoUtc(plannedStartAt),
       planned_end_at: localInputToIsoUtc(plannedEndAt),
+      operator_license_id: licenseId,
     });
     if (!data) return;
     setUtmChecks((prev) => ({ ...prev, timeWindow: asRecord(data.result) ?? {} }));
@@ -375,6 +544,10 @@ export function UtmPage() {
 
   const runVerifyFromUav = async () => {
     const speed = Number.parseFloat(requestedSpeedMps);
+    const uavRec = asRecord(state?.uav);
+    const routeWaypoints = Array.isArray(uavRec?.waypoints)
+      ? (uavRec!.waypoints as unknown[]).filter(isObject).map((w) => ({ x: Number((w as Record<string, unknown>).x ?? 0), y: Number((w as Record<string, unknown>).y ?? 0), z: Number((w as Record<string, unknown>).z ?? 0) }))
+      : [];
     const data = await postApiResult("/api/utm/verify-from-uav", {
       uav_id: simUavId,
       airspace_segment: airspace,
@@ -383,6 +556,8 @@ export function UtmPage() {
       requested_speed_mps: Number.isFinite(speed) ? speed : 12,
       planned_start_at: localInputToIsoUtc(plannedStartAt),
       planned_end_at: localInputToIsoUtc(plannedEndAt),
+      route_id: typeof uavRec?.route_id === "string" ? uavRec.route_id : undefined,
+      waypoints: routeWaypoints.length ? routeWaypoints : undefined,
     });
     if (!data) return;
     setUtmChecks((prev) => ({ ...prev, verify: asRecord(data.result) ?? {} }));
@@ -397,7 +572,19 @@ export function UtmPage() {
     setMsg("Corridor reservation simulated");
   };
 
-  const addNoFlyZoneByMap = async (point: { x: number; y: number; z?: number }) => {
+  const ingestUtmLive = async () => {
+    try {
+      const parsed = JSON.parse(utmLiveJson);
+      if (!isObject(parsed)) throw new Error("JSON payload must be an object");
+      const payload = { ...(parsed as Record<string, unknown>) };
+      if (typeof payload.airspace_segment !== "string" || !String(payload.airspace_segment).trim()) payload.airspace_segment = airspace;
+      await postApi("/api/utm/live/ingest", payload, "UTM live data ingested");
+    } catch (e) {
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const addNoFlyZoneAt = async (point: { x: number; y: number; z?: number }) => {
     const radius_m = Number.parseFloat(nfzDraftRadiusM);
     const z_min = Number.parseFloat(nfzDraftZMin);
     const z_max = Number.parseFloat(nfzDraftZMax);
@@ -426,7 +613,9 @@ export function UtmPage() {
       } catch {
         // keep UTM source of truth even if UAV-side mirror is down
       }
-      setMsg(`NFZ added at (${point.x.toFixed(1)}, ${point.y.toFixed(1)})`);
+      setMsg(`NFZ added at (x ${point.x.toFixed(1)}, y ${point.y.toFixed(1)})`);
+      setNfzDraftX(String(Number(point.x.toFixed(1))));
+      setNfzDraftY(String(Number(point.y.toFixed(1))));
       bumpSharedRevision();
       await loadAll();
     } catch (e) {
@@ -435,14 +624,26 @@ export function UtmPage() {
     }
   };
 
+  const addNoFlyZoneByMap = async (point: { x: number; y: number; z?: number }) => addNoFlyZoneAt(point);
+
+  const addNoFlyZoneByForm = async () => {
+    const x = Number.parseFloat(nfzDraftX);
+    const y = Number.parseFloat(nfzDraftY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      setMsg("Action failed: NFZ X/Y center must be valid numbers");
+      return;
+    }
+    await addNoFlyZoneAt({ x, y, z: Number.parseFloat(nfzDraftZMin) });
+  };
+
   const utm = asRecord(state?.utm);
   const nfz = Array.isArray(utm?.no_fly_zones) ? (utm?.no_fly_zones as unknown[]).filter(isObject) : [];
-  const regs = asRecord(utm?.regulations);
+  const regulationProfiles = asRecord(utm?.regulation_profiles ?? utm?.regulationProfiles);
+  const effectiveRegs = asRecord(utm?.effective_regulations ?? utm?.effectiveRegulations);
   const licenses = asRecord(utm?.licenses) ?? {};
   const licenseRows = useMemo(() => Object.entries(licenses), [licenses]);
   const uav = asRecord(state?.uav);
   const approval = asRecord(uav?.utm_approval);
-  const checks = asRecord(approval?.checks);
   const weatherResultChecks = asRecord(weatherCheck?.checks);
   const routeCheck = asRecord(utmChecks.route);
   const routeGeofence = asRecord(routeCheck?.geofence);
@@ -452,20 +653,8 @@ export function UtmPage() {
   const licenseCheck = asRecord(utmChecks.license);
   const verifyCheck = asRecord(utmChecks.verify);
   const corridorCheck = asRecord(utmChecks.corridor);
-  const checkLogItems = useMemo(
-    () =>
-      [
-        { key: "route", label: "Route / Geofence / NFZ / Regulations", data: routeCheck, accent: "#155eef" },
-        { key: "timeWindow", label: "Time Window Check", data: timeWindowCheck, accent: "#7a5af8" },
-        { key: "license", label: "License Check", data: licenseCheck, accent: "#027a48" },
-        { key: "verify", label: "Verify From UAV", data: verifyCheck, accent: "#b54708" },
-        { key: "corridor", label: "Corridor Reservation", data: corridorCheck, accent: "#344054" },
-      ] as Array<{ key: keyof UtmCheckResults; label: string; data: Record<string, unknown> | null; accent: string }>,
-    [routeCheck, timeWindowCheck, licenseCheck, verifyCheck, corridorCheck],
-  );
-  const availableCheckLogItems = checkLogItems.filter((i) => i.data);
-  const selectedCheckLog = availableCheckLogItems.find((i) => i.key === selectedLogKey) ?? availableCheckLogItems[0] ?? null;
-  const selectedCheckLogData = selectedCheckLog?.data ?? null;
+  const syncedApproval = verifyCheck ?? approval;
+  const syncedApprovalChecks = asRecord(syncedApproval?.checks);
   const routePointsForMap = Array.isArray(uav?.waypoints)
     ? (uav!.waypoints as unknown[]).filter(isObject).map((w) => ({ x: Number((w as Record<string, unknown>).x ?? 0), y: Number((w as Record<string, unknown>).y ?? 0), z: Number((w as Record<string, unknown>).z ?? 0) }))
     : [];
@@ -479,98 +668,353 @@ export function UtmPage() {
     z_max: Number(z.z_max ?? 120),
     reason: String(z.reason ?? ""),
   }));
+  const interactionLogPanel = (
+    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8, alignContent: "start" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ fontWeight: 700, color: "#101828" }}>UAV ↔ UTM Interaction Log</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 11, color: "#667085" }}>Merged recent actions from `uav` + `utm` backends</div>
+          <button
+            type="button"
+            style={chipStyle(false)}
+            onClick={() => {
+              setInteractionLog([]);
+              setInteractionLogClearedAt(new Date().toISOString());
+              void loadAll();
+            }}
+            disabled={busy}
+          >
+            Clear + Refresh
+          </button>
+        </div>
+      </div>
+      <div style={{ border: "1px solid #eaecf0", borderRadius: 10, background: "#fff", maxHeight: 360, overflow: "auto", display: "grid", gap: 6, padding: 8 }}>
+        {interactionLog.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#667085" }}>No interactions recorded yet. Run `Route`, `Verify`, `Approval`, or use UAV copilot actions.</div>
+        ) : (
+          interactionLog.map((item) => {
+            const resultRec = asRecord(item.result);
+            const decision = asRecord(resultRec?.decision);
+            return (
+              <div key={`${item.agent}-${item.id}-${item.created_at}`} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fcfcfd", padding: 8, display: "grid", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 11, color: item.agent === "utm" ? "#b54708" : "#155eef", fontWeight: 700 }}>
+                    {item.agent.toUpperCase()} • <code>{item.action}</code>
+                  </div>
+                  <div style={{ fontSize: 10, color: "#667085" }}>{new Date(item.created_at).toLocaleString()}</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#344054" }}>{summarizeInteraction(item)}</div>
+                {item.entity_id != null ? <div style={{ fontSize: 11, color: "#667085" }}>entity: <code>{String(item.entity_id)}</code></div> : null}
+                {decision ? (
+                  <div style={{ fontSize: 11, color: decision.status === "approved" ? "#027a48" : "#b42318" }}>
+                    decision: <b>{String(decision.status ?? "-")}</b>
+                    {Array.isArray(decision.reasons) && (decision.reasons as unknown[]).length > 0 ? ` (${(decision.reasons as unknown[]).map(String).join(", ")})` : ""}
+                  </div>
+                ) : null}
+                <details>
+                  <summary style={{ cursor: "pointer", fontSize: 11, color: "#667085" }}>Payload / Result</summary>
+                  <pre style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11 }}>
+{JSON.stringify({ payload: item.payload, result: item.result }, null, 2)}
+                  </pre>
+                </details>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+  const checksActionsPanel = (
+    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
+      <div style={{ fontWeight: 700, color: "#101828" }}>UTM Checks & Actions</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button type="button" style={chipStyle(false)} onClick={() => void runRouteChecks()} disabled={busy}>Route</button>
+        <button type="button" style={chipStyle(false)} onClick={() => void runTimeWindowCheck()} disabled={busy}>Time</button>
+        <button type="button" style={chipStyle(false)} onClick={() => void runLicenseCheck()} disabled={busy}>License</button>
+        <button type="button" style={chipStyle(false)} onClick={() => void runVerifyFromUav()} disabled={busy}>Verify</button>
+        <button type="button" style={chipStyle(false)} onClick={() => void reserveCorridor()} disabled={busy}>Corridor</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
+        {[
+          ["Route bounds", yesNoBadge(routeGeofence?.geofence_ok ?? routeGeofence?.bounds_ok ?? routeGeofence?.ok)],
+          ["Route NFZ", yesNoBadge(routeNfz?.ok)],
+          ["Route regulations", yesNoBadge(routeRegs?.ok)],
+          ["Time window", yesNoBadge(timeWindowCheck?.ok)],
+          ["License", yesNoBadge(licenseCheck?.ok)],
+          ["Verify flight plan", yesNoBadge(verifyCheck?.approved)],
+          ["Corridor reserved", yesNoBadge(corridorCheck?.reserved)],
+        ].map(([label, value]) => (
+          <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+            <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
+            <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: "#667085" }}>
+        Results open in the fixed bottom log panel. Use the selector there to switch between Route / Time / License / Verify / Corridor.
+      </div>
+    </div>
+  );
+  const weatherControlsPanel = (
+    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
+      <div style={{ fontWeight: 700, color: "#101828" }}>Weather Controls ({airspace})</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <label style={{ fontSize: 12 }}>Wind: {wind.toFixed(1)} m/s<input type="range" min={0} max={25} step={0.5} value={wind} onChange={(e) => setWind(Number(e.target.value))} style={{ width: "100%" }} /></label>
+        <label style={{ fontSize: 12 }}>Visibility: {visibility.toFixed(1)} km<input type="range" min={0.5} max={20} step={0.5} value={visibility} onChange={(e) => setVisibility(Number(e.target.value))} style={{ width: "100%" }} /></label>
+        <label style={{ fontSize: 12 }}>Precip: {precip.toFixed(1)} mm/h<input type="range" min={0} max={10} step={0.5} value={precip} onChange={(e) => setPrecip(Number(e.target.value))} style={{ width: "100%" }} /></label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, paddingTop: 18 }}>
+          <input type="checkbox" checked={storm} onChange={(e) => setStorm(e.target.checked)} /> Storm alert
+        </label>
+      </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" style={chipStyle(false)} onClick={() => void saveWeather()} disabled={busy}>Save Weather</button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
+          <span>Weather {yesNoBadge(weatherCheck?.ok)}</span>
+          <span>Wind {yesNoBadge(weatherResultChecks?.wind_ok)}</span>
+          <span>Vis {yesNoBadge(weatherResultChecks?.visibility_ok)}</span>
+          <span>Precip {yesNoBadge(weatherResultChecks?.precip_ok)}</span>
+          <span>Storm {yesNoBadge(weatherResultChecks?.storm_ok)}</span>
+        </div>
+      </div>
+    </div>
+  );
+  const latestApprovalChecksPanel = (
+    <div style={{ ...cardStyle, padding: 10 }}>
+      <div style={{ fontWeight: 700, color: "#101828", marginBottom: 8 }}>Latest Approval Checks (Synced)</div>
+      {renderUtmDecisionReadable(syncedApproval?.decision)}
+      <div style={{ height: 8 }} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
+        {[
+          ["Approval", yesNoBadge(syncedApproval?.approved)],
+          ["Route bounds", yesNoBadge(asRecord(syncedApprovalChecks?.route_bounds)?.ok ?? asRecord(syncedApprovalChecks?.route_bounds)?.geofence_ok)],
+          ["Weather", yesNoBadge(asRecord(syncedApprovalChecks?.weather)?.ok)],
+          ["No-fly zone", yesNoBadge(asRecord(syncedApprovalChecks?.no_fly_zone)?.ok)],
+          ["Regulation", yesNoBadge(asRecord(syncedApprovalChecks?.regulations)?.ok)],
+          ["Time window", yesNoBadge(asRecord(syncedApprovalChecks?.time_window)?.ok)],
+          ["Operator license", yesNoBadge(asRecord(syncedApprovalChecks?.operator_license)?.ok)],
+        ].map(([label, value]) => (
+          <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+            <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
+            <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
+          </div>
+        ))}
+        <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4, gridColumn: "span 2" }}>
+          <div style={{ color: "#667085", fontSize: 11 }}>Reason</div>
+          <div style={{ color: "#101828", fontSize: 12, minHeight: 18, overflowWrap: "anywhere" }}>
+            <code>{String(syncedApproval?.reason ?? "-")}</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+  const regulationsAddNfzPanel = (
+    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ fontWeight: 700, color: "#101828" }}>Regulations + Add No-Fly Zone</div>
+        <div style={{ fontSize: 11, color: "#667085" }}>Create NFZ by form or use map in the next card</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1.1fr) repeat(5, minmax(68px, 92px)) auto", gap: 8, alignItems: "end" }}>
+        <label style={{ fontSize: 12 }}>NFZ Reason<input style={{ ...inputStyle, maxWidth: 180 }} value={nfzDraftReason} onChange={(e) => setNfzDraftReason(e.target.value)} /></label>
+        <label style={{ fontSize: 12 }}>Center X<input style={{ ...inputStyle, maxWidth: 82 }} value={nfzDraftX} onChange={(e) => setNfzDraftX(e.target.value)} /></label>
+        <label style={{ fontSize: 12 }}>Center Y<input style={{ ...inputStyle, maxWidth: 82 }} value={nfzDraftY} onChange={(e) => setNfzDraftY(e.target.value)} /></label>
+        <label style={{ fontSize: 12 }}>Radius<input style={{ ...inputStyle, maxWidth: 78 }} value={nfzDraftRadiusM} onChange={(e) => setNfzDraftRadiusM(e.target.value)} /></label>
+        <label style={{ fontSize: 12 }}>Z Min<input style={{ ...inputStyle, maxWidth: 74 }} value={nfzDraftZMin} onChange={(e) => setNfzDraftZMin(e.target.value)} /></label>
+        <label style={{ fontSize: 12 }}>Z Max<input style={{ ...inputStyle, maxWidth: 74 }} value={nfzDraftZMax} onChange={(e) => setNfzDraftZMax(e.target.value)} /></label>
+        <div style={{ display: "flex", alignItems: "end" }}>
+          <button type="button" style={chipStyle(false)} onClick={() => void addNoFlyZoneByForm()} disabled={busy}>Add NFZ</button>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 4, fontSize: 12 }}>
+        <div style={{ color: "#667085" }}>Base regulation defaults</div><div>Used as fallback; UAV-specific limits are derived from the selected license size class.</div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Parameter</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Small UAV</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Middle UAV</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Large UAV</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Effective ({licenseId})</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              ["max_altitude_m", "Max altitude", "m"],
+              ["max_route_span_m", "Max route span", "m"],
+              ["max_wind_mps", "Max wind", "m/s"],
+              ["min_visibility_km", "Min visibility", "km"],
+              ["allow_precip_mmph_max", "Max precip", "mm/h"],
+              ["max_mission_duration_min", "Max mission duration", "min"],
+              ["max_speed_mps", "Max speed", "m/s"],
+            ].map(([key, label, unit]) => {
+              const small = asRecord(regulationProfiles?.small);
+              const middle = asRecord(regulationProfiles?.middle);
+              const large = asRecord(regulationProfiles?.large);
+              const fmt = (r: Record<string, unknown> | null) => (r && r[key] != null ? `${String(r[key])} ${unit}` : "-");
+              return (
+                <tr key={key}>
+                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px", color: "#667085" }}>{label}</td>
+                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{fmt(small)}</td>
+                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{fmt(middle)}</td>
+                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{fmt(large)}</td>
+                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px", fontWeight: 700 }}>{fmt(effectiveRegs)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 4, fontSize: 12 }}>
+        <div style={{ color: "#667085" }}>Effective UAV size (license)</div><div>{String(effectiveRegs?.uav_size_class ?? "-")}</div>
+        <div style={{ color: "#667085" }}>License-derived reasoning</div><div>UTM applies weather/route/time limits from the selected operator license's UAV size class to reflect aircraft capability.</div>
+      </div>
+    </div>
+  );
+
+  const noFlyZonesMapPanel = (
+    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ fontWeight: 700, color: "#101828" }}>No-Fly Zones</div>
+        <div style={{ fontSize: 11, color: "#667085" }}>Shift+click on map to add NFZ center</div>
+      </div>
+      <MissionSyncMap
+        title="UTM Synchronized Map"
+        route={routePointsForMap}
+        plannedPosition={plannedPosForMap}
+        trackedPositions={networkMap.tracks}
+        selectedUavId={simUavId}
+        noFlyZones={nfzZonesForMap}
+        baseStations={networkMap.bs}
+        coverage={networkMap.coverage}
+        clickable
+        onAddNoFlyZoneCenter={(p) => void addNoFlyZoneByMap(p)}
+      />
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Zone</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Center (X, Y)</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Radius</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Altitude</th>
+              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nfz.map((z, i) => (
+              <tr key={`${String(z.zone_id ?? "nfz")}-${i}`}>
+                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(z.zone_id ?? "")}</code></td>
+                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>x {String(z.cx ?? "")}, y {String(z.cy ?? "")}</td>
+                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.radius_m ?? "")} m</td>
+                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.z_min ?? "")} - {String(z.z_max ?? "")} m</td>
+                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.reason ?? "")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {routeGeofence && Array.isArray(routeGeofence.out_of_bounds) && (routeGeofence.out_of_bounds as unknown[]).length > 0 ? (
+        <div style={{ border: "1px solid #fecdca", borderRadius: 8, background: "#fef3f2", padding: 8, fontSize: 12, color: "#7a271a" }}>
+          Route bounds out-of-range waypoints detected in latest route check. Replan on the UAV page before approval.
+        </div>
+      ) : null}
+      {routeNfz && routeNfz.ok === true ? (
+        <div style={{ border: "1px solid #abefc6", borderRadius: 8, background: "#ecfdf3", padding: 8, fontSize: 12, color: "#027a48" }}>
+          Latest route check indicates the route is currently avoiding all no-fly zones.
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <div style={{ display: "grid", gap: 12, padding: 14, maxWidth: 1280, margin: "0 auto" }}>
-      <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-        <div style={{ fontWeight: 700, color: "#101828" }}>UTM Agent Console</div>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(220px,2fr) minmax(180px,1fr) minmax(150px,1fr) minmax(150px,1fr)", gap: 8 }}>
-          <label style={{ fontSize: 12 }}>UTM API URL<input style={inputStyle} value={apiBase} onChange={(e) => setApiBase(e.target.value)} /></label>
-          <label style={{ fontSize: 12 }}>UAV API URL<input style={inputStyle} value={uavApiBase} onChange={(e) => setUavApiBase(e.target.value)} /></label>
-          <label style={{ fontSize: 12 }}>Inspect UAV ID<input style={inputStyle} value={simUavId} onChange={(e) => setSimUavId(e.target.value)} /></label>
-          <label style={{ fontSize: 12 }}>Airspace<input style={inputStyle} value={airspace} onChange={(e) => setAirspace(e.target.value)} /></label>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "auto auto auto 1fr", gap: 8, alignItems: "center" }}>
-          <button type="button" style={chipStyle(false)} onClick={() => void loadAll()} disabled={busy}>Refresh UTM State</button>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "0 4px" }}>
-            <input type="checkbox" checked={liveRefresh} onChange={(e) => setLiveRefresh(e.target.checked)} />
-            Live refresh
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-            every
-            <input style={{ ...inputStyle, width: 60 }} value={liveRefreshSec} onChange={(e) => setLiveRefreshSec(e.target.value)} inputMode="numeric" />
-            s
-          </label>
-          <div style={{ fontSize: 12, textAlign: "right", color: msg.toLowerCase().includes("failed") ? "#b42318" : "#475467" }}>{msg || ""}</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>
-          <label style={{ fontSize: 12 }}>Required License Class
-            <select style={inputStyle} value={requiredLicenseClass} onChange={(e) => setRequiredLicenseClass(e.target.value)}>
-              <option value="VLOS">VLOS</option>
-              <option value="BVLOS">BVLOS</option>
-            </select>
-          </label>
-          <label style={{ fontSize: 12 }}>Requested Speed (m/s)<input style={inputStyle} value={requestedSpeedMps} onChange={(e) => setRequestedSpeedMps(e.target.value)} /></label>
-          <label style={{ fontSize: 12 }}>Planned Start<input type="datetime-local" style={inputStyle} value={plannedStartAt} onChange={(e) => setPlannedStartAt(e.target.value)} /></label>
-          <label style={{ fontSize: 12 }}>Planned End<input type="datetime-local" style={inputStyle} value={plannedEndAt} onChange={(e) => setPlannedEndAt(e.target.value)} /></label>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)" }}>
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)", alignItems: "start" }}>
         <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
-          <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 700, color: "#101828" }}>UTM Checks & Actions</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button type="button" style={chipStyle(false)} onClick={() => void runRouteChecks()} disabled={busy}>Route</button>
-              <button type="button" style={chipStyle(false)} onClick={() => void runTimeWindowCheck()} disabled={busy}>Time</button>
-              <button type="button" style={chipStyle(false)} onClick={() => void runLicenseCheck()} disabled={busy}>License</button>
-              <button type="button" style={chipStyle(false)} onClick={() => void runVerifyFromUav()} disabled={busy}>Verify</button>
-              <button type="button" style={chipStyle(false)} onClick={() => void reserveCorridor()} disabled={busy}>Corridor</button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 4, fontSize: 12 }}>
-              <div style={{ color: "#667085" }}>Route geofence</div><div>{yesNoBadge(routeGeofence?.geofence_ok)}</div>
-              <div style={{ color: "#667085" }}>Route NFZ</div><div>{yesNoBadge(routeNfz?.ok)}</div>
-              <div style={{ color: "#667085" }}>Route regulations</div><div>{yesNoBadge(routeRegs?.ok)}</div>
-              <div style={{ color: "#667085" }}>Time window</div><div>{yesNoBadge(timeWindowCheck?.ok)}</div>
-              <div style={{ color: "#667085" }}>License</div><div>{yesNoBadge(licenseCheck?.ok)}</div>
-              <div style={{ color: "#667085" }}>Verify flight plan</div><div>{yesNoBadge(verifyCheck?.approved)}</div>
-              <div style={{ color: "#667085" }}>Corridor reserved</div><div>{yesNoBadge(corridorCheck?.reserved)}</div>
-            </div>
-            <div style={{ fontSize: 11, color: "#667085" }}>
-              Results open in the fixed bottom log panel. Use the selector there to switch between Route / Time / License / Verify / Corridor.
-            </div>
+        <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
+          <div style={{ fontWeight: 700, color: "#101828" }}>UTM Agent Console</div>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8 }}>
+            <label style={{ fontSize: 12 }}>UTM API URL<input style={{ ...inputStyle, maxWidth: 260 }} value={apiBase} onChange={(e) => setApiBase(e.target.value)} /></label>
+            <label style={{ fontSize: 12 }}>UAV API URL<input style={{ ...inputStyle, maxWidth: 260 }} value={uavApiBase} onChange={(e) => setUavApiBase(e.target.value)} /></label>
+            <label style={{ fontSize: 12 }}>Inspect UAV ID<input style={inputStyle} value={simUavId} onChange={(e) => setSimUavId(e.target.value)} /></label>
+            <label style={{ fontSize: 12 }}>Airspace<input style={inputStyle} value={airspace} onChange={(e) => setAirspace(e.target.value)} /></label>
           </div>
-
-          <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 700, color: "#101828" }}>Weather Controls ({airspace})</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <label style={{ fontSize: 12 }}>Wind: {wind.toFixed(1)} m/s<input type="range" min={0} max={25} step={0.5} value={wind} onChange={(e) => setWind(Number(e.target.value))} style={{ width: "100%" }} /></label>
-              <label style={{ fontSize: 12 }}>Visibility: {visibility.toFixed(1)} km<input type="range" min={0.5} max={20} step={0.5} value={visibility} onChange={(e) => setVisibility(Number(e.target.value))} style={{ width: "100%" }} /></label>
-              <label style={{ fontSize: 12 }}>Precip: {precip.toFixed(1)} mm/h<input type="range" min={0} max={10} step={0.5} value={precip} onChange={(e) => setPrecip(Number(e.target.value))} style={{ width: "100%" }} /></label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, paddingTop: 18 }}>
-                <input type="checkbox" checked={storm} onChange={(e) => setStorm(e.target.checked)} /> Storm alert
-              </label>
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
-              <button type="button" style={chipStyle(false)} onClick={() => void saveWeather()} disabled={busy}>Save Weather</button>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
-                <span>Weather {yesNoBadge(weatherCheck?.ok)}</span>
-                <span>Wind {yesNoBadge(weatherResultChecks?.wind_ok)}</span>
-                <span>Vis {yesNoBadge(weatherResultChecks?.visibility_ok)}</span>
-                <span>Precip {yesNoBadge(weatherResultChecks?.precip_ok)}</span>
-                <span>Storm {yesNoBadge(weatherResultChecks?.storm_ok)}</span>
+          <div style={{ display: "grid", gridTemplateColumns: "auto auto auto 1fr", gap: 8, alignItems: "center" }}>
+            <button type="button" style={chipStyle(false)} onClick={() => void loadAll()} disabled={busy}>Refresh UTM State</button>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "0 4px" }}>
+              <input type="checkbox" checked={liveRefresh} onChange={(e) => setLiveRefresh(e.target.checked)} />
+              Live refresh
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              every
+              <input style={{ ...inputStyle, width: 60 }} value={liveRefreshSec} onChange={(e) => setLiveRefreshSec(e.target.value)} inputMode="numeric" />
+              s
+            </label>
+            <div style={{ fontSize: 12, textAlign: "right", color: msg.toLowerCase().includes("failed") ? "#b42318" : "#475467" }}>{msg || ""}</div>
+          </div>
+          <div style={{ border: "1px solid #eaecf0", borderRadius: 10, background: "#fff", padding: 8, display: "grid", gap: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828", fontSize: 12 }}>Live UTM Data Source + Ingest</div>
+              <div style={{ fontSize: 11, color: "#667085" }}>
+                source:
+                <span style={{ marginLeft: 6, fontWeight: 700, color: String(utmSourceInfo?.active ?? "").includes("sim") ? "#667085" : "#027a48" }}>
+                  {String(utmSourceInfo?.active ?? "unknown")}
+                </span>
+                <span style={{ marginLeft: 6 }}>mode={String(utmSourceInfo?.mode ?? "-")}</span>
               </div>
             </div>
+            {isObject(utmSourceInfo?.meta) ? (
+              <div style={{ fontSize: 11, color: "#667085" }}>
+                {String(asRecord(utmSourceInfo?.meta)?.source ?? "-")} • observed {String(asRecord(utmSourceInfo?.meta)?.observed_at ?? "-")}
+              </div>
+            ) : null}
+            <textarea
+              style={{ ...inputStyle, minHeight: 96, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11 }}
+              value={utmLiveJson}
+              onChange={(e) => setUtmLiveJson(e.target.value)}
+              spellCheck={false}
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ fontSize: 11, color: "#667085" }}>Ingested UTM weather/NFZ/regulations are plotted on the UTM map below.</div>
+              <button type="button" style={chipStyle(false)} onClick={() => void ingestUtmLive()} disabled={busy}>Ingest Live UTM</button>
+            </div>
           </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>
+            <label style={{ fontSize: 12 }}>Required License Class
+              <select style={inputStyle} value={requiredLicenseClass} onChange={(e) => setRequiredLicenseClass(e.target.value)}>
+                <option value="VLOS">VLOS</option>
+                <option value="BVLOS">BVLOS</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 12 }}>Requested Speed (m/s)<input style={inputStyle} value={requestedSpeedMps} onChange={(e) => setRequestedSpeedMps(e.target.value)} /></label>
+            <label style={{ fontSize: 12 }}>Planned Start<input type="datetime-local" style={inputStyle} value={plannedStartAt} onChange={(e) => setPlannedStartAt(e.target.value)} /></label>
+            <label style={{ fontSize: 12 }}>Planned End<input type="datetime-local" style={inputStyle} value={plannedEndAt} onChange={(e) => setPlannedEndAt(e.target.value)} /></label>
+          </div>
+        </div>
+        {regulationsAddNfzPanel}
+        {noFlyZonesMapPanel}
+        </div>
+        <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
+          {checksActionsPanel}
+          {weatherControlsPanel}
+          {latestApprovalChecksPanel}
+          {interactionLogPanel}
 
           <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
             <div style={{ fontWeight: 700, color: "#101828" }}>Operator License Registry</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1.2fr auto", gap: 8, alignItems: "end" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.9fr 0.9fr 1.1fr auto", gap: 8, alignItems: "end" }}>
               <label style={{ fontSize: 12 }}>License ID<input style={inputStyle} value={licenseId} onChange={(e) => setLicenseId(e.target.value)} /></label>
               <label style={{ fontSize: 12 }}>License Class
                 <select style={inputStyle} value={licenseClass} onChange={(e) => setLicenseClass(e.target.value)}>
                   <option value="VLOS">VLOS</option>
                   <option value="BVLOS">BVLOS</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 12 }}>UAV Size
+                <select style={inputStyle} value={licenseUavSizeClass} onChange={(e) => setLicenseUavSizeClass(e.target.value)}>
+                  <option value="small">Small</option>
+                  <option value="middle">Middle</option>
+                  <option value="large">Large</option>
                 </select>
               </label>
               <label style={{ fontSize: 12 }}>Expiry<input type="datetime-local" style={inputStyle} value={licenseExpiry} onChange={(e) => setLicenseExpiry(e.target.value)} /></label>
@@ -588,6 +1032,7 @@ export function UtmPage() {
                   <tr>
                     <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>ID</th>
                     <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Class</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>UAV Size</th>
                     <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Expiry</th>
                     <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Active</th>
                   </tr>
@@ -599,6 +1044,7 @@ export function UtmPage() {
                       <tr key={id}>
                         <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{id}</code></td>
                         <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(r?.license_class ?? "")}</td>
+                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(r?.uav_size_class ?? "middle")}</td>
                         <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(r?.expires_at ?? "")}</code></td>
                         <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{yesNoBadge(r?.active)}</td>
                       </tr>
@@ -606,143 +1052,6 @@ export function UtmPage() {
                   })}
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1.2fr auto auto", gap: 8, alignItems: "center" }}>
-              <div style={{ fontWeight: 700, color: "#101828" }}>UTM Checks Log</div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button type="button" style={chipStyle(logViewMode === "readable")} onClick={() => setLogViewMode("readable")}>Readable</button>
-                <button type="button" style={chipStyle(logViewMode === "raw")} onClick={() => setLogViewMode("raw")}>Raw JSON</button>
-              </div>
-              <select
-                style={{ ...inputStyle, minWidth: 220 }}
-                value={selectedCheckLog?.key ?? ""}
-                onChange={(e) => setSelectedLogKey(e.target.value as keyof UtmCheckResults)}
-              >
-                {availableCheckLogItems.length === 0 ? <option value="">No results yet</option> : null}
-                {availableCheckLogItems.map((item) => (
-                  <option key={item.key} value={item.key}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ border: "1px solid #eaecf0", borderRadius: 10, background: "#fff", minHeight: 130, maxHeight: 220, overflow: "auto" }}>
-              {!selectedCheckLog || !selectedCheckLogData ? (
-                <div style={{ padding: 10, fontSize: 12, color: "#667085" }}>
-                  Run `Route`, `Time`, `License`, `Verify`, or `Corridor` to populate the log panel.
-                </div>
-              ) : logViewMode === "raw" ? (
-                <pre style={{ margin: 0, padding: 10, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12 }}>
-                  {JSON.stringify(selectedCheckLogData, null, 2)}
-                </pre>
-              ) : (
-                <div style={{ display: "grid", gap: 8, padding: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-                    <div style={{ fontWeight: 700, color: selectedCheckLog.accent, fontSize: 12 }}>{selectedCheckLog.label}</div>
-                    <div style={{ fontSize: 11, color: "#667085" }}>Human-readable summary</div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 4, fontSize: 12 }}>
-                    {Object.entries(selectedCheckLogData).slice(0, 18).map(([k, v]) => (
-                      <React.Fragment key={k}>
-                        <div style={{ color: "#667085" }}>{k}</div>
-                        <div style={{ color: "#101828" }}>
-                          {typeof v === "object" && v !== null ? (
-                            <code style={{ fontSize: 11 }}>{Array.isArray(v) ? `[${v.length} items]` : "{...}"}</code>
-                          ) : (
-                            <code style={{ fontSize: 11 }}>{String(v)}</code>
-                          )}
-                        </div>
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
-          <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ fontWeight: 700, color: "#101828" }}>Regulations + No-Fly Zones</div>
-              <div style={{ fontSize: 11, color: "#667085" }}>Shift+click on map to add NFZ center</div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 100px 80px 80px", gap: 8, alignItems: "end" }}>
-              <label style={{ fontSize: 12 }}>NFZ Reason<input style={inputStyle} value={nfzDraftReason} onChange={(e) => setNfzDraftReason(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>Radius<input style={inputStyle} value={nfzDraftRadiusM} onChange={(e) => setNfzDraftRadiusM(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>Z Min<input style={inputStyle} value={nfzDraftZMin} onChange={(e) => setNfzDraftZMin(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>Z Max<input style={inputStyle} value={nfzDraftZMax} onChange={(e) => setNfzDraftZMax(e.target.value)} /></label>
-            </div>
-            <MissionSyncMap
-              title="UTM Synchronized Map"
-              route={routePointsForMap}
-              plannedPosition={plannedPosForMap}
-              trackedPositions={networkMap.tracks}
-              selectedUavId={simUavId}
-              noFlyZones={nfzZonesForMap}
-              baseStations={networkMap.bs}
-              coverage={networkMap.coverage}
-              clickable
-              onAddNoFlyZoneCenter={(p) => void addNoFlyZoneByMap(p)}
-            />
-            <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 4, fontSize: 12 }}>
-              <div style={{ color: "#667085" }}>Max altitude</div><div>{String(regs?.max_altitude_m ?? "-")} m</div>
-              <div style={{ color: "#667085" }}>Max route span</div><div>{String(regs?.max_route_span_m ?? "-")} m</div>
-              <div style={{ color: "#667085" }}>Max wind</div><div>{String(regs?.max_wind_mps ?? "-")} m/s</div>
-              <div style={{ color: "#667085" }}>Min visibility</div><div>{String(regs?.min_visibility_km ?? "-")} km</div>
-              <div style={{ color: "#667085" }}>Max precip</div><div>{String(regs?.allow_precip_mmph_max ?? "-")} mm/h</div>
-              <div style={{ color: "#667085" }}>Max mission duration</div><div>{String(regs?.max_mission_duration_min ?? "-")} min</div>
-            </div>
-            <div style={{ overflowX: "auto", maxHeight: 220 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Zone</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Center</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Radius</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Altitude</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {nfz.map((z, i) => (
-                    <tr key={`${String(z.zone_id ?? "nfz")}-${i}`}>
-                      <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(z.zone_id ?? "")}</code></td>
-                      <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.cx ?? "")}, {String(z.cy ?? "")}</td>
-                      <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.radius_m ?? "")} m</td>
-                      <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.z_min ?? "")} - {String(z.z_max ?? "")} m</td>
-                      <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.reason ?? "")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {routeGeofence && Array.isArray(routeGeofence.out_of_bounds) && (routeGeofence.out_of_bounds as unknown[]).length > 0 ? (
-              <div style={{ border: "1px solid #fecdca", borderRadius: 8, background: "#fef3f2", padding: 8, fontSize: 12, color: "#7a271a" }}>
-                Geofence out-of-bounds waypoints detected in latest route check. Replan on the UAV page before approval.
-              </div>
-            ) : null}
-            {routeNfz && routeNfz.ok === true ? (
-              <div style={{ border: "1px solid #abefc6", borderRadius: 8, background: "#ecfdf3", padding: 8, fontSize: 12, color: "#027a48" }}>
-                Latest route check indicates the route is currently avoiding all no-fly zones.
-              </div>
-            ) : null}
-          </div>
-
-          <div style={{ ...cardStyle, padding: 10 }}>
-            <div style={{ fontWeight: 700, color: "#101828", marginBottom: 8 }}>Latest Approval Checks (from UAV state)</div>
-            <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 4, fontSize: 12 }}>
-              <div style={{ color: "#667085" }}>Approval</div><div>{yesNoBadge(approval?.approved)}</div>
-              <div style={{ color: "#667085" }}>Weather</div><div>{yesNoBadge(asRecord(checks?.weather)?.ok)}</div>
-              <div style={{ color: "#667085" }}>No-fly zone</div><div>{yesNoBadge(asRecord(checks?.no_fly_zone)?.ok)}</div>
-              <div style={{ color: "#667085" }}>Regulation</div><div>{yesNoBadge(asRecord(checks?.regulations)?.ok)}</div>
-              <div style={{ color: "#667085" }}>Time window</div><div>{yesNoBadge(asRecord(checks?.time_window)?.ok)}</div>
-              <div style={{ color: "#667085" }}>Operator license</div><div>{yesNoBadge(asRecord(checks?.operator_license)?.ok)}</div>
-              <div style={{ color: "#667085" }}>Reason</div><div><code>{String(approval?.reason ?? "-")}</code></div>
             </div>
           </div>
         </div>

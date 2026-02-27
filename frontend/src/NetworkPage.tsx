@@ -54,6 +54,7 @@ type NetworkKpis = {
   highInterferenceRiskCount: number;
   utmTrackingHealthPct: number;
 };
+type TrafficSourceInfo = { mode?: string; active?: string; config?: Record<string, unknown> | null; liveTimestamp?: string | null; liveReceivedAt?: string | null };
 
 function isObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null;
@@ -216,6 +217,7 @@ export function NetworkPage() {
   const [remoteKpis, setRemoteKpis] = useState<NetworkKpis | null>(null);
   const [remoteCoverage, setRemoteCoverage] = useState<MissionCoverage[]>([]);
   const [remoteNfz, setRemoteNfz] = useState<MissionNfz[]>([]);
+  const [utmEffectiveRegs, setUtmEffectiveRegs] = useState<Record<string, unknown> | null>(null);
   const [selectedUavId, setSelectedUavId] = useState(sharedInit.uavId || "uav-1");
   const [airspace, setAirspace] = useState(sharedInit.airspace || "sector-A3");
   const [optimizationMode, setOptimizationMode] = useState<OptimizationMode>("coverage");
@@ -230,6 +232,43 @@ export function NetworkPage() {
   const [lastTickAt, setLastTickAt] = useState<string>(new Date().toLocaleTimeString());
   const [apiBusy, setApiBusy] = useState(false);
   const [backendRevisions, setBackendRevisions] = useState<{ uav: number; utm: number; network: number }>({ uav: -1, utm: -1, network: -1 });
+  const [trafficSource, setTrafficSource] = useState<TrafficSourceInfo | null>(null);
+  const [networkLiveJson, setNetworkLiveJson] = useState(
+    JSON.stringify(
+      {
+        payload: {
+          source: "ric-kpi-feed",
+          timestamp: "2026-02-24T20:00:00Z",
+          trackingSnapshots: [
+            {
+              id: "uav-1",
+              x: 120,
+              y: 90,
+              z: 60,
+              headingDeg: 45,
+              speedMps: 12,
+              attachedBsId: "BS-A",
+              rsrpDbm: -78,
+              sinrDb: 18,
+              latencyMs: 22,
+              packetLossPct: 0.3,
+              trackingConfidencePct: 97,
+              interferenceRisk: "low",
+            },
+          ],
+          networkKpis: {
+            coverageScorePct: 96.5,
+            avgSinrDb: 17.8,
+            avgLatencyMs: 24.1,
+            highInterferenceRiskCount: 0,
+            utmTrackingHealthPct: 98.2,
+          },
+        },
+      },
+      null,
+      2,
+    ),
+  );
 
   const loadNetworkState = async (selectedId?: string) => {
     try {
@@ -241,6 +280,7 @@ export function NetworkPage() {
       if (!res.ok || !isObject(data)) throw new Error(String(asRecord(data)?.detail ?? "Network state request failed"));
       const result = asRecord((data as Record<string, unknown>).result);
       if (!result) throw new Error("Network state result missing");
+      setTrafficSource(asRecord(result.trafficSource) as TrafficSourceInfo | null);
 
       const bsList = Array.isArray(result.baseStations) ? result.baseStations.filter(isObject) : [];
       setBaseStations(
@@ -337,6 +377,7 @@ export function NetworkPage() {
         })),
       );
       const utm = asRecord(result.utm);
+      setUtmEffectiveRegs(asRecord(utm?.effectiveRegulations ?? utm?.effective_regulations));
       const nfzRows = Array.isArray(utm?.noFlyZones) ? (utm.noFlyZones as unknown[]).filter(isObject) : [];
       setRemoteNfz(
         nfzRows.map((z) => ({
@@ -368,6 +409,21 @@ export function NetworkPage() {
       return data as Record<string, unknown>;
     } finally {
       setApiBusy(false);
+    }
+  };
+
+  const ingestNetworkTelemetry = async () => {
+    try {
+      const parsed = JSON.parse(networkLiveJson);
+      if (!isObject(parsed)) throw new Error("JSON payload must be an object");
+      const parsedRec = parsed as Record<string, unknown>;
+      const body = isObject(parsedRec.payload) ? parsedRec : { payload: parsedRec };
+      await postNetwork("/api/network/telemetry/ingest", body);
+      setStatusMsg("Live network telemetry ingested");
+      await loadNetworkState(selectedUavId);
+      bumpSharedRevision();
+    } catch (e) {
+      setStatusMsg(`Telemetry ingest failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -506,6 +562,7 @@ export function NetworkPage() {
   };
 
   const selectedUav = uavs.find((u) => u.id === selectedUavId) ?? uavs[0] ?? null;
+  const utmSizeClass = String(utmEffectiveRegs?.uav_size_class ?? "middle");
   const routeForSyncMap = selectedUav?.route ?? [];
   const plannedPosForSyncMap = routeForSyncMap.length > 0 ? routeForSyncMap[0] : null;
   const bsForSyncMap: MissionBs[] = baseStations.map((b) => ({ id: b.id, x: b.x, y: b.y, status: b.status }));
@@ -536,6 +593,14 @@ export function NetworkPage() {
           </div>
         </div>
         <div style={{ marginTop: 10, fontSize: 12, color: "#344054" }}>{statusMsg}</div>
+        <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 11 }}>
+          <span style={{ color: "#667085" }}>Traffic source:</span>
+          <span style={{ fontWeight: 700, color: String(trafficSource?.active ?? "").includes("live") ? "#027a48" : "#667085" }}>
+            {String(trafficSource?.active ?? "unknown")}
+          </span>
+          <span style={{ color: "#667085" }}>mode={String(trafficSource?.mode ?? "-")}</span>
+          {trafficSource?.liveTimestamp ? <span style={{ color: "#667085" }}>live ts {String(trafficSource.liveTimestamp)}</span> : null}
+        </div>
       </div>
 
       <div style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(0, 1.8fr) minmax(320px, 1fr)" }}>
@@ -567,6 +632,40 @@ export function NetworkPage() {
             </div>
             <div style={{ marginTop: 10, fontSize: 11, color: "#667085" }}>
               High interference-risk UAVs: <b style={{ color: networkSummary.highRisk ? "#b42318" : "#027a48" }}>{networkSummary.highRisk}</b> / {snapshots.length}
+            </div>
+          </div>
+
+          <div style={cardStyle}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#101828", marginBottom: 8 }}>UTM UAV Capability Profile</div>
+            <div style={{ fontSize: 11, color: "#667085", marginBottom: 8 }}>
+              License-derived weather/mission limits used by UTM verification and exposed to network mission monitoring.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
+              <Metric label="UAV Size Class" value={utmSizeClass} tone="#155eef" />
+              <Metric label="Max Altitude" value={`${Number(utmEffectiveRegs?.max_altitude_m ?? 0)} m`} />
+              <Metric label="Max Route Span" value={`${Number(utmEffectiveRegs?.max_route_span_m ?? 0)} m`} />
+              <Metric label="Max Wind" value={`${Number(utmEffectiveRegs?.max_wind_mps ?? 0)} m/s`} />
+              <Metric label="Min Visibility" value={`${Number(utmEffectiveRegs?.min_visibility_km ?? 0)} km`} />
+              <Metric label="Max Mission Duration" value={`${Number(utmEffectiveRegs?.max_mission_duration_min ?? 0)} min`} />
+            </div>
+          </div>
+
+          <div style={cardStyle}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#101828", marginBottom: 8 }}>Live Traffic Telemetry (Backend Ingest)</div>
+            <div style={{ fontSize: 11, color: "#667085", marginBottom: 8 }}>
+              Push real traffic/KPI snapshots to the Network backend and plot them on the map immediately.
+            </div>
+            <textarea
+              style={{ ...fieldStyle, minHeight: 120, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11 }}
+              value={networkLiveJson}
+              onChange={(e) => setNetworkLiveJson(e.target.value)}
+              spellCheck={false}
+            />
+            <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ fontSize: 11, color: "#667085" }}>
+                Active: {String(trafficSource?.active ?? "-")} {trafficSource?.liveReceivedAt ? `• received ${String(trafficSource.liveReceivedAt)}` : ""}
+              </div>
+              <button type="button" style={chipStyle(false)} onClick={() => void ingestNetworkTelemetry()} disabled={apiBusy}>Ingest Live Traffic</button>
             </div>
           </div>
 

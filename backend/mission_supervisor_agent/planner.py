@@ -56,6 +56,8 @@ def _extract_context(state: Dict[str, Any]) -> Dict[str, Any]:
     utm_nfz_ok = bool(((utm.get("no_fly_zone_check") or {}).get("ok", True)) if isinstance(utm, dict) else True)
     utm_reg_ok = bool(((utm.get("regulation_check") or {}).get("ok", True)) if isinstance(utm, dict) else True)
     utm_license_ok = bool(((utm.get("license_check") or {}).get("ok", True)) if isinstance(utm, dict) else True)
+    dss = utm.get("dss") if isinstance(utm, dict) and isinstance(utm.get("dss"), dict) else {}
+    dss_blocking_conflict_count = int(dss.get("blocking_conflict_count", 0) or 0) if isinstance(dss, dict) else 0
     net_kpis = net.get("networkKpis") if isinstance(net, dict) else {}
     avg_latency_ms = float((net_kpis.get("avgLatencyMs", 0.0) if isinstance(net_kpis, dict) else 0.0) or 0.0)
     coverage_score = float((net_kpis.get("coverageScorePct", 100.0) if isinstance(net_kpis, dict) else 100.0) or 100.0)
@@ -79,6 +81,7 @@ def _extract_context(state: Dict[str, Any]) -> Dict[str, Any]:
         "utm_reg_ok": utm_reg_ok,
         "utm_license_ok": utm_license_ok,
         "utm_checks_ok": utm_weather_ok and utm_nfz_ok and utm_reg_ok and utm_license_ok,
+        "dss_blocking_conflict_count": dss_blocking_conflict_count,
         "approved": approved,
         "uav_active": uav_active,
         "uav_armed": uav_armed,
@@ -107,6 +110,8 @@ def _derive_phase(state: Dict[str, Any], domain: str, ctx: Dict[str, Any]) -> st
     if ctx["flight_phase"] in {"HOLD", "LOW_BATTERY", "RTH"}:
         return "mitigation"
     if (not ctx["utm_checks_ok"]) or ("uav_low_battery" in ctx["warnings"]):
+        return "mitigation"
+    if ctx["dss_blocking_conflict_count"] > 0 or "utm_dss_blocking_conflicts" in ctx["warnings"]:
         return "mitigation"
     if "network_latency_high" in ctx["warnings"] or "network_interference_risk" in ctx["warnings"]:
         return "mitigation" if ctx["uav_active"] else "preflight"

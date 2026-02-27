@@ -19,5 +19,6 @@ MCP_HTTP_URL = os.getenv("MCP_HTTP_URL", os.getenv("MCP_PROXY_URL", "http://127.
 MCP_HTTP_AUTH_TOKEN = os.getenv("MCP_HTTP_AUTH_TOKEN", os.getenv("MCP_PROXY_AUTH_TOKEN", "")).strip()
 MCP_CALL_TIMEOUT_S = int(os.getenv("MCP_CALL_TIMEOUT_S", "120").strip() or "120")
 
-_BACKEND_DIR = Path(__file__).resolve().parents[2]
-AUDIT_LOG_PATH = str(_BACKEND_DIR / "agentRIC_audit.log")
+_REPO_DIR = Path(__file__).resolve().parents[3]
+_DEFAULT_AUDIT_LOG_PATH = _REPO_DIR / ".dev-logs" / "agentRIC_audit.log"
+AUDIT_LOG_PATH = str(Path(os.getenv("AGENTRIC_AUDIT_LOG_PATH", str(_DEFAULT_AUDIT_LOG_PATH))).expanduser())

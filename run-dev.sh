@@ -16,6 +16,7 @@ FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 START_FRONTEND="${START_FRONTEND:-1}"
 USE_RELOAD="${USE_RELOAD:-1}"
+LANGGRAPH_NO_RELOAD="${LANGGRAPH_NO_RELOAD:-1}"
 ALLOW_EXISTING_PORTS="${ALLOW_EXISTING_PORTS:-0}"
 
 mkdir -p "$LOG_DIR"
@@ -169,11 +170,17 @@ if [[ "$USE_RELOAD" == "1" ]]; then
 fi
 
 if [[ "$SKIP_LANGGRAPH" == "0" ]]; then
+  LANGGRAPH_FLAGS=(--port "$LANGGRAPH_PORT")
+  if [[ "$LANGGRAPH_NO_RELOAD" == "1" ]]; then
+    # langgraph dev writes runtime state under backend/.langgraph_api, which can
+    # trigger a self-reload loop when backend/ is the watched directory.
+    LANGGRAPH_FLAGS+=(--no-reload)
+  fi
   start_bg \
     "langgraph-dev" \
     "$BACKEND_DIR" \
     "$LOG_DIR/langgraph-dev.log" \
-    langgraph dev --port "$LANGGRAPH_PORT"
+    langgraph dev "${LANGGRAPH_FLAGS[@]}"
 fi
 
 if [[ "$SKIP_ORAN_MCP_API" == "0" ]]; then
