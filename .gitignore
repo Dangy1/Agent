@@ -1,2 +1,11 @@
 backend/airspace_faa/work/
 .dev-logs/
+
+# Runtime state / local caches
+.gitnexus/
+backend/.langgraph_api/
+backend/data/*.sqlite3
+
+# Python build/runtime artifacts
+**/__pycache__/
+*.pyc
