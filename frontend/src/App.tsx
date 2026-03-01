@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AgentSkillGraphPage } from "./AgentSkillGraphPage";
 import { Chat } from "./Chat";
 import { NetworkPage } from "./NetworkPage";
 import { UavPage } from "./UavPage";
 import { UtmPage } from "./UtmPage";
 
-type AgentPage = "oran" | "uav" | "utm" | "network";
+type AgentPage = "oran" | "uav" | "utm" | "network" | "graph";
 
 function readHashPage(): AgentPage {
   const raw = (window.location.hash || "#/oran").replace(/^#\/?/, "").toLowerCase();
   if (raw === "uav") return "uav";
   if (raw === "utm") return "utm";
   if (raw === "network") return "network";
+  if (raw === "graph") return "graph";
   return "oran";
 }
 
@@ -45,6 +47,7 @@ export default function App() {
     if (page === "uav") return "UAV Agent";
     if (page === "utm") return "UTM Agent";
     if (page === "network") return "Network Mission";
+    if (page === "graph") return "Agent + Skill Graph";
     return "O-RAN Agent";
   }, [page]);
 
@@ -61,6 +64,7 @@ export default function App() {
             <button type="button" style={navButtonStyle(page === "uav")} onClick={() => setHashPage("uav")}>UAV Page</button>
             <button type="button" style={navButtonStyle(page === "utm")} onClick={() => setHashPage("utm")}>UTM Page</button>
             <button type="button" style={navButtonStyle(page === "network")} onClick={() => setHashPage("network")}>Network Page</button>
+            <button type="button" style={navButtonStyle(page === "graph")} onClick={() => setHashPage("graph")}>Graph Page</button>
           </nav>
         </div>
       </header>
@@ -69,6 +73,7 @@ export default function App() {
       {page === "uav" ? <UavPage /> : null}
       {page === "utm" ? <UtmPage /> : null}
       {page === "network" ? <NetworkPage /> : null}
+      {page === "graph" ? <AgentSkillGraphPage /> : null}
     </div>
   );
 }

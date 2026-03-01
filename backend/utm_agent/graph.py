@@ -1,7 +1,6 @@
 from langchain.agents import create_agent
-from langchain_ollama import ChatOllama
 
-from oran_agent.config.settings import MODEL, OLLAMA_URL
+from oran_agent.llm_factory import build_chat_model
 
 from .tools import TOOLS
 
@@ -11,8 +10,10 @@ Do not issue UAV flight-control commands or network/RAN changes.
 Return explicit approval status, scope, and expiry details.
 """
 
-model = ChatOllama(model=MODEL, base_url=OLLAMA_URL, temperature=0)
+model, model_meta = build_chat_model(temperature=0)
 
 agent = create_agent(model=model, tools=TOOLS, system_prompt=UTM_PROMPT)
 
-__all__ = ["agent"]
+LLM_PROVIDER_META = model_meta.as_dict()
+
+__all__ = ["agent", "LLM_PROVIDER_META"]

@@ -337,7 +337,7 @@ def _plan_node(state: CopilotState) -> CopilotState:
                 "hold_tool": "uav_hold",
             },
         },
-        unavailable_error_message="Ollama planner unavailable (langchain_ollama missing or Ollama not reachable)",
+        unavailable_error_message="LLM planner unavailable (provider/dependency/config issue)",
     )
     planner = dict(planner_raw)
     if planner.get("status") == "success":
@@ -376,7 +376,7 @@ def _summary_node(state: CopilotState) -> CopilotState:
             "tool_trace": tool_trace,
             "execution": execution,
         },
-        unavailable_error_message="Ollama planner unavailable (langchain_ollama missing or Ollama not reachable)",
+        unavailable_error_message="LLM planner unavailable (provider/dependency/config issue)",
     )
     return {"summary": summary}
 
@@ -424,11 +424,12 @@ def _finalize_node(state: CopilotState) -> CopilotState:
         "networkOptimization": execution.get("networkOptimization"),
         "networkState": network_state.get("result") if isinstance(network_state, dict) else None,
         "copilot": {
-            "mode": "ollama_langgraph_planner",
+            "mode": "llm_langgraph_planner",
             "llm": {
                 "enabled": True,
-                "provider": "ollama",
+                "provider": planner.get("provider"),
                 "model": planner.get("model"),
+                "config_provider": planner.get("config_provider"),
                 "plannerStatus": planner.get("status"),
                 "summaryStatus": summary.get("status"),
             },

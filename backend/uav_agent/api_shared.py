@@ -2618,7 +2618,7 @@ def _run_uav_agent_chat_heuristic(payload: UavAgentChatPayload) -> Dict[str, Any
             "mode": "heuristic",
             "llm": {
                 "enabled": False,
-                "reason": "Ollama planner unavailable (langchain_ollama missing or Ollama not reachable)",
+                "reason": "LLM planner unavailable (provider/dependency/config issue)",
             },
         },
     }

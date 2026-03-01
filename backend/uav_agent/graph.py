@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from langchain.agents import create_agent
-from langchain_ollama import ChatOllama
 
-from oran_agent.config.settings import MODEL, OLLAMA_URL
+from oran_agent.llm_factory import build_chat_model
 
 from .copilot_workflow import copilot_workflow, run_copilot_workflow
 from .tools import TOOLS
@@ -17,8 +16,9 @@ For network/RAN slice/tc/kpm changes, delegate to the network or mission supervi
 Always prefer safe states (hold, RTH, land) on uncertainty.
 """
 
-model = ChatOllama(model=MODEL, base_url=OLLAMA_URL, temperature=0)
+model, model_meta = build_chat_model(temperature=0)
 agent = create_agent(model=model, tools=TOOLS, system_prompt=UAV_PROMPT)
 
+LLM_PROVIDER_META = model_meta.as_dict()
 
-__all__ = ["agent", "copilot_workflow", "run_copilot_workflow"]
+__all__ = ["agent", "copilot_workflow", "run_copilot_workflow", "LLM_PROVIDER_META"]

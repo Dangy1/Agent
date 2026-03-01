@@ -23,6 +23,7 @@ type CreateSliceRow = {
   max_replenish: string;
 };
 type MCPProfileMap = Record<string, Record<string, unknown>>;
+type LLMProvider = "ollama" | "openai" | "auto";
 type UavWaypoint = { x: number; y: number; z: number };
 type EditableWaypointRow = { x: string; y: string; z: string };
 type UavSimState = {
@@ -743,6 +744,13 @@ export function Chat(
       return false;
     }
   })();
+  const initialLlmPanelOpen = (() => {
+    try {
+      return window.localStorage.getItem("oran.llmPanelOpen") === "1";
+    } catch {
+      return false;
+    }
+  })();
 
   const [input, setInput] = useState("");
   const [sliceProfile, setSliceProfile] = useState<SliceProfile>("monitor");
@@ -762,6 +770,18 @@ export function Chat(
   const [mcpProfiles, setMcpProfiles] = useState<MCPProfileMap>({});
   const [mcpConfigBusy, setMcpConfigBusy] = useState(false);
   const [mcpConfigMsg, setMcpConfigMsg] = useState("");
+  const [llmProvider, setLlmProvider] = useState<LLMProvider>("ollama");
+  const [llmOllamaUrl, setLlmOllamaUrl] = useState("http://127.0.0.1:11434");
+  const [llmOllamaModel, setLlmOllamaModel] = useState("gpt-oss:latest");
+  const [llmOpenAiModel, setLlmOpenAiModel] = useState("gpt-4o-mini");
+  const [llmOpenAiBaseUrl, setLlmOpenAiBaseUrl] = useState("");
+  const [llmOpenAiApiKeyInput, setLlmOpenAiApiKeyInput] = useState("");
+  const [llmOpenAiApiKeySet, setLlmOpenAiApiKeySet] = useState(false);
+  const [llmFallbackToOpenAi, setLlmFallbackToOpenAi] = useState(true);
+  const [llmConfigBusy, setLlmConfigBusy] = useState(false);
+  const [llmConfigMsg, setLlmConfigMsg] = useState("");
+  const [llmEffectiveStatus, setLlmEffectiveStatus] = useState<Record<string, unknown> | null>(null);
+  const [llmPanelOpen, setLlmPanelOpen] = useState(initialLlmPanelOpen);
   const [uavApiBase, setUavApiBase] = useState("http://127.0.0.1:8020");
   const [uavApiBusy, setUavApiBusy] = useState(false);
   const [uavApiMsg, setUavApiMsg] = useState("");
@@ -844,6 +864,14 @@ export function Chat(
     }
   }, [customPanelOpen]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("oran.llmPanelOpen", llmPanelOpen ? "1" : "0");
+    } catch {
+      // ignore storage failures
+    }
+  }, [llmPanelOpen]);
+
   const loadMcpConfig = async () => {
     setMcpConfigBusy(true);
     setMcpConfigMsg("");
@@ -867,8 +895,39 @@ export function Chat(
     }
   };
 
+  const loadLlmConfig = async () => {
+    setLlmConfigBusy(true);
+    setLlmConfigMsg("");
+    try {
+      const res = await fetch(`${mcpApiBase}/api/llm/config`);
+      const data = await res.json();
+      if (!res.ok || !isObject(data)) throw new Error(String((asRecord(data)?.detail ?? "Request failed")));
+      const cfg = asRecord(data.config);
+      const effective = asRecord(data.effective);
+      const ollama = asRecord(cfg?.ollama);
+      const openai = asRecord(cfg?.openai);
+      if (typeof cfg?.provider === "string") {
+        const p = cfg.provider.toLowerCase();
+        if (p === "ollama" || p === "openai" || p === "auto") setLlmProvider(p);
+      }
+      if (typeof ollama?.url === "string") setLlmOllamaUrl(ollama.url);
+      if (typeof ollama?.model === "string") setLlmOllamaModel(ollama.model);
+      if (typeof openai?.model === "string") setLlmOpenAiModel(openai.model);
+      if (typeof openai?.base_url === "string") setLlmOpenAiBaseUrl(openai.base_url);
+      if (typeof cfg?.fallback_to_openai === "boolean") setLlmFallbackToOpenAi(cfg.fallback_to_openai);
+      setLlmOpenAiApiKeySet(Boolean(openai?.api_key_set));
+      setLlmEffectiveStatus(effective ?? null);
+      setLlmConfigMsg("Loaded LLM provider config");
+    } catch (e) {
+      setLlmConfigMsg(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLlmConfigBusy(false);
+    }
+  };
+
   useEffect(() => {
     void loadMcpConfig();
+    void loadLlmConfig();
   }, []);
 
   const loadUavSimState = async () => {
@@ -964,6 +1023,57 @@ export function Chat(
     } catch (e) {
       setMcpConfigMsg(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
       setMcpConfigBusy(false);
+    }
+  };
+
+  const saveLlmConfig = async () => {
+    setLlmConfigBusy(true);
+    setLlmConfigMsg("");
+    try {
+      const payload: Record<string, unknown> = {
+        provider: llmProvider,
+        ollama_url: llmOllamaUrl,
+        ollama_model: llmOllamaModel,
+        openai_model: llmOpenAiModel,
+        openai_base_url: llmOpenAiBaseUrl,
+        fallback_to_openai: llmFallbackToOpenAi,
+      };
+      if (llmOpenAiApiKeyInput.trim()) {
+        payload.openai_api_key = llmOpenAiApiKeyInput.trim();
+      }
+      const res = await fetch(`${mcpApiBase}/api/llm/config`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(String((asRecord(data)?.detail ?? "Request failed")));
+      setLlmOpenAiApiKeyInput("");
+      setLlmConfigMsg("Saved LLM config. Restart backend/langgraph to apply to graph chat agents.");
+      await loadLlmConfig();
+    } catch (e) {
+      setLlmConfigMsg(`Save failed: ${e instanceof Error ? e.message : String(e)}`);
+      setLlmConfigBusy(false);
+    }
+  };
+
+  const clearOpenAiKey = async () => {
+    setLlmConfigBusy(true);
+    setLlmConfigMsg("");
+    try {
+      const res = await fetch(`${mcpApiBase}/api/llm/config`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ openai_api_key: "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(String((asRecord(data)?.detail ?? "Request failed")));
+      setLlmOpenAiApiKeyInput("");
+      setLlmConfigMsg("Cleared stored OpenAI key.");
+      await loadLlmConfig();
+    } catch (e) {
+      setLlmConfigMsg(`Clear key failed: ${e instanceof Error ? e.message : String(e)}`);
+      setLlmConfigBusy(false);
     }
   };
 
@@ -1397,6 +1507,124 @@ export function Chat(
     </div>
   );
 
+  const llmRuntimePanel = (
+    <div style={{ marginBottom: 12, ...sidebarSectionCardStyle, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "#344054" }}>LLM Provider</div>
+        <button type="button" style={chipStyle(llmPanelOpen)} onClick={() => setLlmPanelOpen((v) => !v)}>
+          {llmPanelOpen ? "Hide" : "Show"}
+        </button>
+      </div>
+      {llmEffectiveStatus ? (
+        <div style={{ fontSize: 12, color: String(llmEffectiveStatus.ready) === "true" ? "#027a48" : "#b42318" }}>
+          Effective: {String(llmEffectiveStatus.ready) === "true" ? "ready" : "not ready"}{" "}
+          {typeof llmEffectiveStatus.provider === "string" ? `(${llmEffectiveStatus.provider}` : ""}
+          {typeof llmEffectiveStatus.model === "string" ? `:${llmEffectiveStatus.model}` : ""}
+          {typeof llmEffectiveStatus.provider === "string" ? ")" : ""}
+        </div>
+      ) : null}
+      {llmPanelOpen ? (
+        <>
+          <label style={{ fontSize: 12, color: "#344054" }}>
+            Provider
+            <select
+              value={llmProvider}
+              onChange={(e) => {
+                const p = e.target.value;
+                if (p === "ollama" || p === "openai" || p === "auto") setLlmProvider(p);
+              }}
+              style={{ ...compactSliceConfigFieldStyle, marginTop: 6, height: 30 }}
+            >
+              <option value="ollama">ollama (default)</option>
+              <option value="openai">openai</option>
+              <option value="auto">auto (ollama -&gt; openai)</option>
+            </select>
+          </label>
+          <label style={{ fontSize: 12, color: "#344054" }}>
+            Ollama URL
+            <input
+              value={llmOllamaUrl}
+              onChange={(e) => setLlmOllamaUrl(e.target.value)}
+              style={{ ...compactInputStyle, marginTop: 6 }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: "#344054" }}>
+            Ollama Model
+            <input
+              value={llmOllamaModel}
+              onChange={(e) => setLlmOllamaModel(e.target.value)}
+              style={{ ...compactInputStyle, marginTop: 6 }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: "#344054" }}>
+            OpenAI Model
+            <input
+              value={llmOpenAiModel}
+              onChange={(e) => setLlmOpenAiModel(e.target.value)}
+              style={{ ...compactInputStyle, marginTop: 6 }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: "#344054" }}>
+            OpenAI Base URL (optional)
+            <input
+              value={llmOpenAiBaseUrl}
+              onChange={(e) => setLlmOpenAiBaseUrl(e.target.value)}
+              style={{ ...compactInputStyle, marginTop: 6 }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: "#344054" }}>
+            OpenAI API Key {llmOpenAiApiKeySet ? "(stored)" : "(not set)"}
+            <input
+              type="password"
+              value={llmOpenAiApiKeyInput}
+              onChange={(e) => setLlmOpenAiApiKeyInput(e.target.value)}
+              placeholder="Leave blank to keep existing key"
+              style={{ ...compactInputStyle, marginTop: 6 }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: "#344054", display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={llmFallbackToOpenAi}
+              onChange={(e) => setLlmFallbackToOpenAi(e.target.checked)}
+            />
+            Fallback to OpenAI when Ollama setup fails
+          </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" style={chipStyle(false)} onClick={() => void loadLlmConfig()} disabled={llmConfigBusy}>
+              Refresh
+            </button>
+            <button type="button" style={chipStyle(false)} onClick={() => void saveLlmConfig()} disabled={llmConfigBusy}>
+              Save LLM config
+            </button>
+            <button type="button" style={chipStyle(false)} onClick={() => void clearOpenAiKey()} disabled={llmConfigBusy}>
+              Clear key
+            </button>
+          </div>
+        </>
+      ) : (
+        <div
+          style={{
+            border: "1px dashed #d0d5dd",
+            borderRadius: 8,
+            padding: "8px 10px",
+            fontSize: 12,
+            color: "#667085",
+            background: "#fcfcfd",
+            lineHeight: 1.35,
+          }}
+        >
+          Folded. Press <b>Show</b> to edit provider, model, base URL, and key settings.
+        </div>
+      )}
+      {llmConfigMsg ? (
+        <div style={{ fontSize: 12, color: llmConfigMsg.toLowerCase().includes("failed") ? "#b42318" : "#475467" }}>
+          {llmConfigMsg}
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <div
       style={{
@@ -1431,7 +1659,12 @@ export function Chat(
             Guided inputs for slice monitor/apply tools. Values are checked here and by the agent.
           </p>
 
-          {!compactOranUi ? mcpConnectionPanel : null}
+          {!compactOranUi ? (
+            <>
+              {mcpConnectionPanel}
+              {llmRuntimePanel}
+            </>
+          ) : null}
 
           {showSimulatorPanel ? (
           <div style={{ marginBottom: 12, ...sidebarSectionCardStyle, display: "grid", gap: 8 }}>
@@ -2238,7 +2471,7 @@ export function Chat(
                       lineHeight: 1.35,
                     }}
                   >
-                    This is taking longer than expected. It may be waiting on the MCP server or Ollama.
+                    This is taking longer than expected. It may be waiting on MCP or the configured LLM provider.
                     If it keeps spinning, retry and check the last tool/error message.
                   </div>
                 ) : null}
@@ -2289,7 +2522,7 @@ export function Chat(
           ) : null}
           {!stream.error && stream.isLoading && loadingSeconds >= 25 ? (
             <div style={{ color: "#b42318", marginTop: 10, fontSize: 13 }}>
-              No response yet. If this continues, the backend may be hung on an MCP/Ollama call.
+              No response yet. If this continues, the backend may be hung on an MCP/LLM call.
             </div>
           ) : null}
         </main>
@@ -2307,11 +2540,12 @@ export function Chat(
               top: 24,
             }}
           >
-            <h3 style={{ margin: "0 0 8px", color: "#0f172a" }}>MCP Runtime</h3>
+            <h3 style={{ margin: "0 0 8px", color: "#0f172a" }}>Runtime Config</h3>
             <p style={{ margin: "0 0 12px", fontSize: 13, color: "#475467", lineHeight: 1.35 }}>
-              Connection and runtime profile controls for the O-RAN MCP server.
+              MCP connection plus shared LLM provider settings.
             </p>
             {mcpConnectionPanel}
+            {llmRuntimePanel}
           </aside>
         ) : null}
       </div>

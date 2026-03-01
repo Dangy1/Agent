@@ -78,6 +78,30 @@ What this does:
 ./bash.sh setup
 ```
 
+## LLM Provider Selection (Ollama Default)
+
+By default, agents use Ollama via `OLLAMA_URL`/`OLLAMA_MODEL`.
+
+If Ollama is unavailable, switch to OpenAI with environment variables:
+
+```bash
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=<your_key>
+export OPENAI_MODEL=gpt-4o-mini
+```
+
+Optional fallback behavior when configured provider is Ollama:
+
+```bash
+export LLM_FALLBACK_TO_OPENAI=1
+```
+
+Runtime API endpoints (port `8010`):
+
+- `GET /api/llm/config`
+- `PATCH /api/llm/config`
+- `DELETE /api/llm/config`
+
 ## Conda Auto-Start
 
 After hook install, this auto-starts the stack:

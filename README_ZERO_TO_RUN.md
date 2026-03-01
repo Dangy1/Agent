@@ -85,6 +85,24 @@ curl -sS http://127.0.0.1:8025/api/uss/state | jq -r .status
 curl -I http://127.0.0.1:5173
 ```
 
+### LLM Provider (default Ollama, optional OpenAI)
+
+Default behavior uses Ollama (`LLM_PROVIDER=ollama`).
+
+To run with OpenAI instead:
+
+```bash
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=<your_key>
+export OPENAI_MODEL=gpt-4o-mini
+```
+
+Runtime config API:
+
+```bash
+curl -sS http://127.0.0.1:8010/api/llm/config | jq
+```
+
 Expected status values are `success` for the APIs above.
 
 Quick MCP preset switching:

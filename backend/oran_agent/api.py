@@ -19,7 +19,16 @@ from .config.runtime_mcp import (
     runtime_snapshot_for_ui,
     set_mcp_runtime_overrides,
 )
+from .config.runtime_llm import (
+    clear_llm_runtime_overrides,
+    get_llm_runtime_config,
+    list_llm_providers,
+    patch_llm_runtime_overrides,
+    runtime_snapshot_for_ui as llm_runtime_snapshot_for_ui,
+    set_llm_runtime_overrides,
+)
 from .core import _MCP
+from .llm_factory import build_chat_model_from_config
 
 
 class MCPConfigPayload(BaseModel):
@@ -34,6 +43,16 @@ class MCPConfigPayload(BaseModel):
 class MCPProfilePayload(BaseModel):
     profile: str
     overrides: Optional[Dict[str, Any]] = None
+
+
+class LLMConfigPayload(BaseModel):
+    provider: Optional[str] = None
+    ollama_url: Optional[str] = None
+    ollama_model: Optional[str] = None
+    openai_model: Optional[str] = None
+    openai_base_url: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    fallback_to_openai: Optional[bool] = None
 
 
 app = FastAPI(title="AgentRIC O-RAN MCP Config API")
@@ -81,6 +100,24 @@ def _current_active_profile(config: Dict[str, Any], profiles: Dict[str, Dict[str
         if matched:
             return profile_name
     return ""
+
+
+def _llm_effective_status(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        _model, meta = build_chat_model_from_config(cfg, temperature=0)
+        return {
+            "ready": True,
+            "provider": meta.provider,
+            "model": meta.model,
+            "config_provider": meta.config_provider,
+            "fallback_used": meta.fallback_used,
+        }
+    except Exception as e:
+        return {
+            "ready": False,
+            "provider": str(cfg.get("provider", "ollama")),
+            "error": str(e),
+        }
 
 
 @app.get("/api/mcp/config")
@@ -179,4 +216,52 @@ def select_mcp_preset(preset: str) -> Dict[str, Any]:
         "profile": profile_name,
         "config": cfg,
         "ui": runtime_snapshot_for_ui(),
+    }
+
+
+@app.get("/api/llm/config")
+def get_llm_config() -> Dict[str, Any]:
+    cfg = get_llm_runtime_config()
+    return {
+        "status": "success",
+        "config": llm_runtime_snapshot_for_ui(cfg),
+        "providers": list_llm_providers(),
+        "effective": _llm_effective_status(cfg),
+        "notes": [
+            "Graph-based agent LLM selection is applied at process start. Restart backend/langgraph after changing provider settings.",
+            "UAV copilot helper calls read runtime LLM settings per request.",
+        ],
+    }
+
+
+@app.put("/api/llm/config")
+def replace_llm_config(payload: LLMConfigPayload) -> Dict[str, Any]:
+    cfg = set_llm_runtime_overrides(payload.model_dump(exclude_none=True))
+    return {
+        "status": "success",
+        "config": llm_runtime_snapshot_for_ui(cfg),
+        "providers": list_llm_providers(),
+        "effective": _llm_effective_status(cfg),
+    }
+
+
+@app.patch("/api/llm/config")
+def update_llm_config(payload: LLMConfigPayload) -> Dict[str, Any]:
+    cfg = patch_llm_runtime_overrides(payload.model_dump(exclude_none=True))
+    return {
+        "status": "success",
+        "config": llm_runtime_snapshot_for_ui(cfg),
+        "providers": list_llm_providers(),
+        "effective": _llm_effective_status(cfg),
+    }
+
+
+@app.delete("/api/llm/config")
+def reset_llm_config() -> Dict[str, Any]:
+    cfg = clear_llm_runtime_overrides()
+    return {
+        "status": "success",
+        "config": llm_runtime_snapshot_for_ui(cfg),
+        "providers": list_llm_providers(),
+        "effective": _llm_effective_status(cfg),
     }

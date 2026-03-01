@@ -18,6 +18,7 @@ except Exception as e:  # pragma: no cover
 
 from .runtime import MISSION_RUNTIME
 from .planner import list_skills, match_skill
+from .skill_catalog import get_agent_skill, render_skill_plan
 
 
 class MissionStartPayload(BaseModel):
@@ -63,6 +64,54 @@ _TEST_LINE_RE = re.compile(
     r"^(?P<name>test[^\s]+)\s+\([^)]+\)\s+\.\.\.\s+(?P<status>ok|FAIL|ERROR|skipped.*)$"
 )
 _RAN_RE = re.compile(r"^Ran\s+(?P<total>\d+)\s+tests?\s+in\s+(?P<secs>[0-9.]+)s$", re.IGNORECASE)
+
+_MISSION_GRAPH_NODES: list[Dict[str, Any]] = [
+    {"id": "ingest_request", "label": "Ingest Request", "stage": "intake"},
+    {"id": "parse_intent", "label": "Parse Intent", "stage": "intake"},
+    {"id": "risk_assessment", "label": "Risk Assessment", "stage": "intake"},
+    {"id": "refresh_uav_state", "label": "Refresh UAV State", "stage": "context"},
+    {"id": "refresh_utm_state", "label": "Refresh UTM State", "stage": "context"},
+    {"id": "refresh_network_state", "label": "Refresh Network State", "stage": "context"},
+    {"id": "ingest_events", "label": "Ingest Events", "stage": "context"},
+    {"id": "plan_build", "label": "Build Plan", "stage": "planning"},
+    {"id": "approval_check", "label": "Approval Check", "stage": "planning"},
+    {"id": "approval_gate", "label": "Approval Gate", "stage": "guardrail"},
+    {"id": "policy_check", "label": "Policy Check", "stage": "guardrail"},
+    {"id": "lock_manager", "label": "Lock Manager", "stage": "execution"},
+    {"id": "dispatch_step", "label": "Dispatch Step", "stage": "execution"},
+    {"id": "execute_step", "label": "Execute Step", "stage": "execution"},
+    {"id": "verify_outcome", "label": "Verify Outcome", "stage": "execution"},
+    {"id": "progress", "label": "Progress", "stage": "execution"},
+    {"id": "recovery", "label": "Recovery", "stage": "recovery"},
+    {"id": "complete", "label": "Complete", "stage": "finalize"},
+    {"id": "release_locks", "label": "Release Locks", "stage": "finalize"},
+]
+
+_MISSION_GRAPH_EDGES: list[Dict[str, Any]] = [
+    {"from": "ingest_request", "to": "parse_intent"},
+    {"from": "parse_intent", "to": "risk_assessment"},
+    {"from": "risk_assessment", "to": "refresh_uav_state"},
+    {"from": "refresh_uav_state", "to": "refresh_utm_state"},
+    {"from": "refresh_utm_state", "to": "refresh_network_state"},
+    {"from": "refresh_network_state", "to": "ingest_events"},
+    {"from": "ingest_events", "to": "plan_build"},
+    {"from": "plan_build", "to": "approval_check"},
+    {"from": "approval_check", "to": "approval_gate", "condition": "approval_required=true"},
+    {"from": "approval_check", "to": "policy_check", "condition": "approval_required=false"},
+    {"from": "approval_gate", "to": "release_locks"},
+    {"from": "policy_check", "to": "recovery", "condition": "next_action=rollback"},
+    {"from": "policy_check", "to": "lock_manager", "condition": "next_action=continue"},
+    {"from": "lock_manager", "to": "dispatch_step"},
+    {"from": "dispatch_step", "to": "execute_step"},
+    {"from": "execute_step", "to": "verify_outcome"},
+    {"from": "verify_outcome", "to": "recovery", "condition": "next_action=rollback"},
+    {"from": "verify_outcome", "to": "progress", "condition": "next_action=continue"},
+    {"from": "progress", "to": "complete", "condition": "next_action=complete"},
+    {"from": "progress", "to": "approval_check", "condition": "next_action=continue"},
+    {"from": "recovery", "to": "release_locks"},
+    {"from": "complete", "to": "release_locks"},
+    {"from": "release_locks", "to": "END"},
+]
 
 
 def _utc_now() -> str:
@@ -188,9 +237,40 @@ def list_missions(limit: int = 50) -> Dict[str, Any]:
     return {"status": "success", "result": {"missions": MISSION_RUNTIME.list_missions(limit=limit)}}
 
 
+@app.get("/api/mission/graph")
+def get_mission_graph() -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "result": {
+            "name": "mission_supervisor_state_graph",
+            "nodes": _MISSION_GRAPH_NODES,
+            "edges": _MISSION_GRAPH_EDGES,
+        },
+    }
+
+
 @app.get("/api/mission/skills")
 def get_mission_skills() -> Dict[str, Any]:
     return {"status": "success", "result": {"skills": list_skills()}}
+
+
+@app.get("/api/mission/skills/{skill_id}")
+def get_mission_skill_detail(
+    skill_id: str,
+    uav_id: str = "uav-1",
+    route_id: str = "route-1",
+    airspace_segment: str = "sector-A3",
+) -> Dict[str, Any]:
+    skill = get_agent_skill(skill_id)
+    if not isinstance(skill, dict):
+        raise HTTPException(status_code=404, detail=f"skill not found: {skill_id}")
+    values = {
+        "uav_id": str(uav_id or "uav-1"),
+        "route_id": str(route_id or "route-1"),
+        "airspace_segment": str(airspace_segment or "sector-A3"),
+    }
+    rendered = render_skill_plan(skill_id, values)
+    return {"status": "success", "result": {"skill": skill, "render_values": values, "rendered_plan": rendered}}
 
 
 @app.post("/api/mission/skills/match")

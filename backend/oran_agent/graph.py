@@ -1,12 +1,11 @@
 from langchain.agents import create_agent
-from langchain_ollama import ChatOllama
 
-from oran_agent.config.settings import MODEL, OLLAMA_URL
+from oran_agent.llm_factory import build_chat_model
 from oran_agent.core import BASE_SYSTEM_PROMPT
 from oran_agent.nodes.state import Context, CustomState
 from oran_agent.tools.mcp import TOOLS
 
-model = ChatOllama(model=MODEL, base_url=OLLAMA_URL, temperature=0)
+model, model_meta = build_chat_model(temperature=0)
 
 agent = create_agent(
     model=model,
@@ -15,4 +14,6 @@ agent = create_agent(
     state_schema=CustomState,
 )
 
-__all__ = ["agent", "Context", "CustomState"]
+LLM_PROVIDER_META = model_meta.as_dict()
+
+__all__ = ["agent", "Context", "CustomState", "LLM_PROVIDER_META"]
