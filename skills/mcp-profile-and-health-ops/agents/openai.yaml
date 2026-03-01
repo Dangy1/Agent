@@ -1,0 +1,4 @@
+interface:
+  display_name: "MCP Profile Health Ops"
+  short_description: "Switch MCP profiles and verify stack health"
+  default_prompt: "Use $mcp-profile-and-health-ops to set a profile or preset and run full stack health verification."

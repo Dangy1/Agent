@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from .skill_catalog import get_agent_skill, list_agent_skills, match_agent_skill, render_skill_plan
 from .state import PlanStep
 
 
@@ -21,6 +22,10 @@ def _route_volume4d_from_uav_snapshot(uav: Dict[str, Any]) -> Dict[str, Any]:
 
 def classify_request(request_text: str) -> str:
     t = (request_text or "").lower()
+    if "dss" in t or "operational intent" in t or "subscription" in t:
+        return "dss_ops"
+    if "uss" in t:
+        return "uss_ops"
     if any(k in t for k in ["uav", "drone", "flight", "utm"]):
         if any(k in t for k in ["slice", "tc", "kpm", "network"]):
             return "cross_domain"
@@ -42,6 +47,8 @@ def build_intent(request_text: str, domain: str) -> Dict[str, Any]:
             "slice_ops": "manage_slice",
             "tc_ops": "manage_tc",
             "kpm_rc_ops": "manage_kpm_rc",
+            "dss_ops": "manage_dss",
+            "uss_ops": "manage_uss",
         }.get(domain, "generic_request"),
         "domain": domain,
         "raw_request": request_text,
@@ -51,6 +58,15 @@ def build_intent(request_text: str, domain: str) -> Dict[str, Any]:
             "reliability_min": 0.999 if domain == "cross_domain" else None,
         },
     }
+
+
+def list_skills() -> List[Dict[str, Any]]:
+    return list_agent_skills()
+
+
+def match_skill(request_text: str) -> Dict[str, Any] | None:
+    out = match_agent_skill(request_text)
+    return dict(out) if isinstance(out, dict) else None
 
 
 def _extract_context(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -359,6 +375,15 @@ def _build_phase_plan(state: Dict[str, Any]) -> List[PlanStep]:
     intent = state.get("intent") or {}
     domain = str(intent.get("domain", "unknown"))
     ctx = _extract_context(state)
+    skill_id = str(intent.get("skill_id") or state.get("selected_skill_id") or "").strip()
+    if skill_id:
+        skill = get_agent_skill(skill_id)
+        if isinstance(skill, dict):
+            skill_values = dict(ctx)
+            skill_values.setdefault("domain", domain)
+            rendered = render_skill_plan(skill_id, skill_values)
+            if rendered:
+                return rendered  # type: ignore[return-value]
     phase = _derive_phase(state, domain, ctx)
 
     if domain == "cross_domain":
@@ -389,6 +414,10 @@ def _build_phase_plan(state: Dict[str, Any]) -> List[PlanStep]:
         return [{"step_id": "tc-start", "domain": "network", "op": "tc_start", "params": {"profile": "default", "duration_s": 60}, "resource_keys": ["net:tc"]}]
     if domain == "kpm_rc_ops":
         return [{"step_id": "kpm-monitor", "domain": "network", "op": "kpm_monitor", "params": {"duration_s": 20}, "resource_keys": ["telemetry:kpm_rc"]}]
+    if domain == "dss_ops":
+        return [{"step_id": "dss-state", "domain": "dss", "op": "state", "params": {}, "resource_keys": []}]
+    if domain == "uss_ops":
+        return [{"step_id": "uss-state", "domain": "uss", "op": "state", "params": {}, "resource_keys": []}]
     return [{"step_id": "health", "domain": "network", "op": "health", "params": {}, "resource_keys": []}]
 
 

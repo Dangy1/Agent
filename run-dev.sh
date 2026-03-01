@@ -14,10 +14,14 @@ UAV_API_PORT="${UAV_API_PORT:-${UAV_UTM_API_PORT:-8020}}"
 UTM_API_PORT="${UTM_API_PORT:-8021}"
 NETWORK_API_PORT="${NETWORK_API_PORT:-8022}"
 MISSION_SUPERVISOR_API_PORT="${MISSION_SUPERVISOR_API_PORT:-8023}"
+DSS_API_PORT="${DSS_API_PORT:-8024}"
+USS_API_PORT="${USS_API_PORT:-8025}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 START_FRONTEND="${START_FRONTEND:-1}"
 START_MISSION_SUPERVISOR="${START_MISSION_SUPERVISOR:-1}"
+START_DSS_AGENT="${START_DSS_AGENT:-1}"
+START_USS_AGENT="${START_USS_AGENT:-1}"
 USE_RELOAD="${USE_RELOAD:-1}"
 LANGGRAPH_NO_RELOAD="${LANGGRAPH_NO_RELOAD:-1}"
 ALLOW_EXISTING_PORTS="${ALLOW_EXISTING_PORTS:-0}"
@@ -49,6 +53,8 @@ MANAGED_PORTS=(
   "$UTM_API_PORT"
   "$NETWORK_API_PORT"
   "$MISSION_SUPERVISOR_API_PORT"
+  "$DSS_API_PORT"
+  "$USS_API_PORT"
   "$FRONTEND_PORT"
 )
 
@@ -90,6 +96,8 @@ print_ports() {
   echo "  UTM_API_PORT=$UTM_API_PORT"
   echo "  NETWORK_API_PORT=$NETWORK_API_PORT"
   echo "  MISSION_SUPERVISOR_API_PORT=$MISSION_SUPERVISOR_API_PORT"
+  echo "  DSS_API_PORT=$DSS_API_PORT"
+  echo "  USS_API_PORT=$USS_API_PORT"
   echo "  FRONTEND_PORT=$FRONTEND_PORT"
 }
 
@@ -373,6 +381,8 @@ SKIP_UAV_API=0
 SKIP_UTM_API=0
 SKIP_NETWORK_API=0
 SKIP_MISSION_SUPERVISOR=0
+SKIP_DSS_API=0
+SKIP_USS_API=0
 SKIP_FRONTEND=0
 
 check_port_or_reuse() {
@@ -398,6 +408,12 @@ check_port_or_reuse "$UTM_API_PORT" "UTM simulator API" SKIP_UTM_API
 check_port_or_reuse "$NETWORK_API_PORT" "Network mission API" SKIP_NETWORK_API
 if [[ "$START_MISSION_SUPERVISOR" == "1" ]]; then
   check_port_or_reuse "$MISSION_SUPERVISOR_API_PORT" "Mission supervisor API" SKIP_MISSION_SUPERVISOR
+fi
+if [[ "$START_DSS_AGENT" == "1" ]]; then
+  check_port_or_reuse "$DSS_API_PORT" "DSS API" SKIP_DSS_API
+fi
+if [[ "$START_USS_AGENT" == "1" ]]; then
+  check_port_or_reuse "$USS_API_PORT" "USS API" SKIP_USS_API
 fi
 if [[ "$START_FRONTEND" == "1" ]]; then
   check_port_or_reuse "$FRONTEND_PORT" "Frontend" SKIP_FRONTEND
@@ -521,6 +537,22 @@ if [[ "$START_MISSION_SUPERVISOR" == "1" && "$SKIP_MISSION_SUPERVISOR" == "0" ]]
     uvicorn mission_supervisor_agent.api:app --host 0.0.0.0 --port "$MISSION_SUPERVISOR_API_PORT" "${UVICORN_RELOAD_FLAG[@]}"
 fi
 
+if [[ "$START_DSS_AGENT" == "1" && "$SKIP_DSS_API" == "0" ]]; then
+  start_bg \
+    "dss-agent-api" \
+    "$BACKEND_DIR" \
+    "$LOG_DIR/dss-agent-api.log" \
+    uvicorn dss_agent.api:app --host 0.0.0.0 --port "$DSS_API_PORT" "${UVICORN_RELOAD_FLAG[@]}"
+fi
+
+if [[ "$START_USS_AGENT" == "1" && "$SKIP_USS_API" == "0" ]]; then
+  start_bg \
+    "uss-agent-api" \
+    "$BACKEND_DIR" \
+    "$LOG_DIR/uss-agent-api.log" \
+    uvicorn uss_agent.api:app --host 0.0.0.0 --port "$USS_API_PORT" "${UVICORN_RELOAD_FLAG[@]}"
+fi
+
 if [[ "$START_FRONTEND" == "1" && "$SKIP_FRONTEND" == "0" ]]; then
   start_bg \
     "frontend-vite" \
@@ -540,6 +572,12 @@ echo "  UTM simulator API: http://127.0.0.1:${UTM_API_PORT}$(reuse_note "$SKIP_U
 echo "  Network mission API: http://127.0.0.1:${NETWORK_API_PORT}$(reuse_note "$SKIP_NETWORK_API")"
 if [[ "$START_MISSION_SUPERVISOR" == "1" ]]; then
   echo "  Mission supervisor API: http://127.0.0.1:${MISSION_SUPERVISOR_API_PORT}$(reuse_note "$SKIP_MISSION_SUPERVISOR")"
+fi
+if [[ "$START_DSS_AGENT" == "1" ]]; then
+  echo "  DSS API: http://127.0.0.1:${DSS_API_PORT}$(reuse_note "$SKIP_DSS_API")"
+fi
+if [[ "$START_USS_AGENT" == "1" ]]; then
+  echo "  USS API: http://127.0.0.1:${USS_API_PORT}$(reuse_note "$SKIP_USS_API")"
 fi
 if [[ "$START_FRONTEND" == "1" ]]; then
   echo "  Frontend: http://127.0.0.1:${FRONTEND_PORT}$(reuse_note "$SKIP_FRONTEND")"
@@ -561,6 +599,12 @@ echo "  $LOG_DIR/utm-sim-api.log"
 echo "  $LOG_DIR/network-mission-api.log"
 if [[ "$START_MISSION_SUPERVISOR" == "1" ]]; then
   echo "  $LOG_DIR/mission-supervisor-api.log"
+fi
+if [[ "$START_DSS_AGENT" == "1" ]]; then
+  echo "  $LOG_DIR/dss-agent-api.log"
+fi
+if [[ "$START_USS_AGENT" == "1" ]]; then
+  echo "  $LOG_DIR/uss-agent-api.log"
 fi
 if [[ "$START_FRONTEND" == "1" ]]; then
   echo "  $LOG_DIR/frontend-vite.log"

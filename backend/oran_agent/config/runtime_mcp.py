@@ -1,5 +1,6 @@
 import json
 import shlex
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .settings import (
@@ -13,12 +14,26 @@ from .settings import (
 
 _OVERRIDES: Dict[str, Any] = {}
 
+_REPO_DIR = Path(__file__).resolve().parents[3]
+_UAV_UTM_PROCEDURES_SERVER = str(_REPO_DIR / "backend" / "others" / "mcp_uav_utm_procedures.py")
+_UAV_UTM_STRICT_OPS_SERVER = str(_REPO_DIR / "backend" / "others" / "mcp_uav_utm_strict_ops.py")
+
 MCP_PROFILES: Dict[str, Dict[str, Any]] = {
     "suites-stdio": {
         "transport": "stdio",
     },
     "suites-http": {
         "transport": "http",
+    },
+    "uav-utm-procedures-stdio": {
+        "transport": "stdio",
+        "server_name": "uav-utm-procedures",
+        "server_args": _UAV_UTM_PROCEDURES_SERVER,
+    },
+    "uav-utm-strict-ops-stdio": {
+        "transport": "stdio",
+        "server_name": "uav-utm-strict-ops",
+        "server_args": _UAV_UTM_STRICT_OPS_SERVER,
     },
 }
 

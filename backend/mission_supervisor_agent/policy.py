@@ -95,6 +95,23 @@ def _phase_allows_action(phase: str, domain: str, op: str) -> bool:
         ("utm", "dss_conformance_last"),
         ("network", "health"),
         ("network", "kpm_monitor"),
+        ("dss", "state"),
+        ("dss", "query_operational_intents"),
+        ("dss", "dss_query_operational_intents"),
+        ("dss", "query_subscriptions"),
+        ("dss", "dss_query_subscriptions"),
+        ("dss", "query_participants"),
+        ("dss", "dss_query_participants"),
+        ("dss", "query_notifications"),
+        ("dss", "dss_query_notifications"),
+        ("dss", "conformance_last"),
+        ("dss", "dss_conformance_last"),
+        ("uss", "state"),
+        ("uss", "query_peer_intents"),
+        ("uss", "query_operational_intents"),
+        ("uss", "uss_query_intents"),
+        ("uss", "pull_notifications"),
+        ("uss", "uss_pull_notifications"),
     }
     if (domain, op) in observe_ops:
         return True
@@ -107,6 +124,22 @@ def _phase_allows_action(phase: str, domain: str, op: str) -> bool:
             ("network", "slice_apply_profile"),
             ("network", "tc_start"),
             ("network", "kpm_start"),
+            ("dss", "upsert_operational_intent"),
+            ("dss", "dss_upsert_operational_intent"),
+            ("dss", "upsert_subscription"),
+            ("dss", "dss_upsert_subscription"),
+            ("dss", "upsert_participant"),
+            ("dss", "dss_upsert_participant"),
+            ("dss", "run_local_conformance"),
+            ("dss", "dss_run_local_conformance"),
+            ("uss", "publish_intent"),
+            ("uss", "uss_publish_intent"),
+            ("uss", "upsert_operational_intent"),
+            ("uss", "subscribe_airspace"),
+            ("uss", "uss_subscribe_airspace"),
+            ("uss", "upsert_subscription"),
+            ("uss", "register_participant"),
+            ("uss", "uss_register_participant"),
         },
         "launch": {
             ("uav", "launch"),
@@ -123,6 +156,24 @@ def _phase_allows_action(phase: str, domain: str, op: str) -> bool:
             ("network", "health"),
             ("network", "kpm_monitor"),
             ("network", "slice_apply_profile"),
+            ("dss", "upsert_operational_intent"),
+            ("dss", "dss_upsert_operational_intent"),
+            ("dss", "delete_operational_intent"),
+            ("dss", "dss_delete_operational_intent"),
+            ("dss", "upsert_subscription"),
+            ("dss", "dss_upsert_subscription"),
+            ("dss", "delete_subscription"),
+            ("dss", "dss_delete_subscription"),
+            ("dss", "ack_notification"),
+            ("dss", "dss_ack_notification"),
+            ("uss", "publish_intent"),
+            ("uss", "uss_publish_intent"),
+            ("uss", "upsert_operational_intent"),
+            ("uss", "subscribe_airspace"),
+            ("uss", "uss_subscribe_airspace"),
+            ("uss", "upsert_subscription"),
+            ("uss", "ack_notification"),
+            ("uss", "uss_ack_notification"),
         },
         "mitigation": {
             ("uav", "hold"),
@@ -132,12 +183,40 @@ def _phase_allows_action(phase: str, domain: str, op: str) -> bool:
             ("network", "health"),
             ("network", "kpm_monitor"),
             ("network", "slice_apply_profile"),
+            ("dss", "upsert_operational_intent"),
+            ("dss", "dss_upsert_operational_intent"),
+            ("dss", "delete_operational_intent"),
+            ("dss", "dss_delete_operational_intent"),
+            ("dss", "upsert_subscription"),
+            ("dss", "dss_upsert_subscription"),
+            ("dss", "delete_subscription"),
+            ("dss", "dss_delete_subscription"),
+            ("dss", "ack_notification"),
+            ("dss", "dss_ack_notification"),
+            ("dss", "run_local_conformance"),
+            ("dss", "dss_run_local_conformance"),
+            ("uss", "publish_intent"),
+            ("uss", "uss_publish_intent"),
+            ("uss", "upsert_operational_intent"),
+            ("uss", "subscribe_airspace"),
+            ("uss", "uss_subscribe_airspace"),
+            ("uss", "upsert_subscription"),
+            ("uss", "ack_notification"),
+            ("uss", "uss_ack_notification"),
         },
         "closeout": {
             ("uav", "land"),
             ("uav", "status"),
             ("network", "health"),
             ("network", "kpm_monitor"),
+            ("dss", "query_notifications"),
+            ("dss", "dss_query_notifications"),
+            ("dss", "ack_notification"),
+            ("dss", "dss_ack_notification"),
+            ("uss", "pull_notifications"),
+            ("uss", "uss_pull_notifications"),
+            ("uss", "ack_notification"),
+            ("uss", "uss_ack_notification"),
         },
     }
     return (domain, op) in allowed_by_phase.get(phase, set())
@@ -201,6 +280,23 @@ def _append_snapshot_guardrails(state: MissionState, action: Dict[str, Any], not
             ("network", "health"),
             ("network", "slice_monitor"),
             ("network", "kpm_monitor"),
+            ("dss", "state"),
+            ("dss", "query_operational_intents"),
+            ("dss", "dss_query_operational_intents"),
+            ("dss", "query_subscriptions"),
+            ("dss", "dss_query_subscriptions"),
+            ("dss", "query_participants"),
+            ("dss", "dss_query_participants"),
+            ("dss", "query_notifications"),
+            ("dss", "dss_query_notifications"),
+            ("dss", "conformance_last"),
+            ("dss", "dss_conformance_last"),
+            ("uss", "state"),
+            ("uss", "query_peer_intents"),
+            ("uss", "query_operational_intents"),
+            ("uss", "uss_query_intents"),
+            ("uss", "pull_notifications"),
+            ("uss", "uss_pull_notifications"),
         }
         if (domain, op) in always_allow_observe:
             return
@@ -271,6 +367,16 @@ def _append_snapshot_guardrails(state: MissionState, action: Dict[str, Any], not
             notes.append("network_slice_apply_blocked_during_closeout")
         if phase == "preflight" and avg_latency > 60.0:
             notes.append("network_slice_apply_blocked_preflight_unstable_network")
+
+    if domain == "dss" and op in {"upsert_operational_intent", "dss_upsert_operational_intent"}:
+        volume4d = params.get("volume4d")
+        if not isinstance(volume4d, dict) or not volume4d:
+            notes.append("dss_upsert_intent_blocked_missing_volume4d")
+
+    if domain == "uss" and op in {"publish_intent", "upsert_operational_intent", "uss_publish_intent"}:
+        manager_uss_id = str(params.get("manager_uss_id") or "").strip()
+        if not manager_uss_id:
+            notes.append("uss_publish_intent_blocked_missing_manager_uss_id")
 
 
 def _append_profile_guardrails(state: MissionState, action: Dict[str, Any], notes: List[str]) -> None:

@@ -14,6 +14,8 @@ class CommandTypesTests(unittest.TestCase):
     def test_classify_observe_and_actuate(self) -> None:
         self.assertEqual(classify_command_operation_type({"domain": "network", "op": "health"}), "observe")
         self.assertEqual(classify_command_operation_type({"domain": "uav", "op": "launch"}), "actuate")
+        self.assertEqual(classify_command_operation_type({"domain": "dss", "op": "state"}), "observe")
+        self.assertEqual(classify_command_operation_type({"domain": "uss", "op": "publish_intent"}), "actuate")
         self.assertEqual(classify_command_operation_type({"domain": "x", "op": "y"}), "unknown")
 
 
@@ -112,4 +114,3 @@ class PolicyGuardrailTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

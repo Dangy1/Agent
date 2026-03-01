@@ -1,0 +1,4 @@
+interface:
+  display_name: "UAV UTM Strict Ops"
+  short_description: "Execute DSS, conformance, and security ops"
+  default_prompt: "Use $uav-utm-strict-ops-automation to run strict DSS/conformance/security checks and return before-after evidence."

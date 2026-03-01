@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-DomainName = Literal["slice_ops", "tc_ops", "kpm_rc_ops", "uav_mission", "cross_domain", "unknown"]
+DomainName = Literal["slice_ops", "tc_ops", "kpm_rc_ops", "uav_mission", "cross_domain", "dss_ops", "uss_ops", "unknown"]
 ApprovalIssuer = Literal["human", "utm", "uas"]
 
 
@@ -67,6 +67,7 @@ class MissionState(TypedDict, total=False):
     request_text: str
     task_idempotency_key: str
     intent: Dict[str, Any]
+    selected_skill: Dict[str, Any]
     domain: DomainName
     plan: List[PlanStep]
     current_step: int
@@ -93,6 +94,8 @@ class MissionState(TypedDict, total=False):
     decision_log: List[MissionDecisionRecord]
     evidence_log: List[Dict[str, Any]]
     command_bus_log: List[Dict[str, Any]]
+    task_memory: Dict[str, Any]
+    protocol_trace: Dict[str, Any]
     rollback_context: List[Dict[str, Any]]
     last_tool_result: Dict[str, Any]
     execution_error: Optional[str]

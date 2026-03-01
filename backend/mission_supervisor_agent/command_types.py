@@ -25,6 +25,23 @@ OBSERVE_OPS: Set[Tuple[str, str]] = {
     ("network", "health"),
     ("network", "slice_monitor"),
     ("network", "kpm_monitor"),
+    ("dss", "state"),
+    ("dss", "query_operational_intents"),
+    ("dss", "dss_query_operational_intents"),
+    ("dss", "query_subscriptions"),
+    ("dss", "dss_query_subscriptions"),
+    ("dss", "query_participants"),
+    ("dss", "dss_query_participants"),
+    ("dss", "query_notifications"),
+    ("dss", "dss_query_notifications"),
+    ("dss", "conformance_last"),
+    ("dss", "dss_conformance_last"),
+    ("uss", "state"),
+    ("uss", "query_peer_intents"),
+    ("uss", "query_operational_intents"),
+    ("uss", "uss_query_intents"),
+    ("uss", "pull_notifications"),
+    ("uss", "uss_pull_notifications"),
 }
 
 
@@ -33,7 +50,7 @@ def classify_command_operation_type(command: Dict[str, Any]) -> str:
     op = str(command.get("op", ""))
     if (domain, op) in OBSERVE_OPS:
         return "observe"
-    if domain in {"uav", "utm", "network"} and op:
+    if domain in {"uav", "utm", "network", "dss", "uss"} and op:
         return "actuate"
     return "unknown"
 

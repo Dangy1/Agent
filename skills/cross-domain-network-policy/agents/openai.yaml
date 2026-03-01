@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cross-Domain Network Policy"
+  short_description: "Gate missions with network and UTM policy"
+  default_prompt: "Use $cross-domain-network-policy to enforce network KPI gates and produce a cross-domain pass-fail decision."

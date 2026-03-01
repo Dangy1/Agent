@@ -9,7 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from .command_bus import AuditableCommandBus
 from .domain_dispatch import classify_command_operation_type, dispatch_domain_agent
 from .lock_manager import LOCK_MANAGER
-from .planner import build_intent, build_plan, classify_request, derive_mission_phase
+from .planner import build_intent, build_plan, classify_request, derive_mission_phase, match_skill
 from .policy import assess_risk, build_policy_decision_record, build_proposed_actions, find_missing_approvals, validate_policy
 from .state import MissionState
 from .watchers import ingest_events, refresh_network_state, refresh_uav_state, refresh_utm_state
@@ -46,8 +46,18 @@ def ingest_request(state: MissionState) -> MissionState:
 
 
 def parse_intent(state: MissionState) -> MissionState:
-    domain = classify_request(state.get("request_text", ""))
-    return {"domain": domain, "intent": build_intent(state.get("request_text", ""), domain), "status": "intent_parsed"}
+    request_text = state.get("request_text", "")
+    skill = match_skill(request_text)
+    domain = classify_request(request_text)
+    if domain == "unknown" and isinstance(skill, dict) and str(skill.get("domain_hint", "")).strip():
+        domain = str(skill.get("domain_hint"))
+    intent = build_intent(request_text, domain)
+    if isinstance(skill, dict):
+        intent["skill_id"] = str(skill.get("skill_id") or "")
+        intent["skill_name"] = str(skill.get("name") or "")
+        intent["skill_score"] = int(skill.get("score") or 0)
+        intent["skill_triggers_matched"] = list(skill.get("triggers_matched") or [])
+    return {"domain": domain, "intent": intent, "selected_skill": skill or {}, "status": "intent_parsed"}
 
 
 def risk_assessment(state: MissionState) -> MissionState:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "UAV UTM Procedures"
+  short_description: "Run end-to-end UAV mission procedures"
+  default_prompt: "Use $uav-utm-procedures-automation to run prepare-plan-submit-launch with evidence and recovery notes."

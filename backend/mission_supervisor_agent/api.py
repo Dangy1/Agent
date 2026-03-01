@@ -17,6 +17,7 @@ except Exception as e:  # pragma: no cover
     raise RuntimeError("mission_supervisor_agent.api requires fastapi and pydantic") from e
 
 from .runtime import MISSION_RUNTIME
+from .planner import list_skills, match_skill
 
 
 class MissionStartPayload(BaseModel):
@@ -33,6 +34,10 @@ class MissionStopPayload(BaseModel):
 
 class MissionTestsRunPayload(BaseModel):
     timeout_sec: int = Field(default=120, ge=5, le=1800)
+
+
+class MissionSkillMatchPayload(BaseModel):
+    request_text: str = Field(..., min_length=1)
 
 
 app = FastAPI(title="Mission Supervisor API")
@@ -169,9 +174,29 @@ def get_mission_events(mission_id: str, limit: int = 100) -> Dict[str, Any]:
     return {"status": "success", "result": {"mission_id": mission_id, "events": events}}
 
 
+@app.get("/api/mission/{mission_id}/protocol-trace")
+def get_mission_protocol_trace(mission_id: str, limit: int = 200, include_replayed: bool = True) -> Dict[str, Any]:
+    try:
+        trace = MISSION_RUNTIME.get_protocol_trace(mission_id, limit=limit, include_replayed=include_replayed)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"mission not found: {mission_id}") from None
+    return {"status": "success", "result": {"mission_id": mission_id, "protocol_trace": trace}}
+
+
 @app.get("/api/mission")
 def list_missions(limit: int = 50) -> Dict[str, Any]:
     return {"status": "success", "result": {"missions": MISSION_RUNTIME.list_missions(limit=limit)}}
+
+
+@app.get("/api/mission/skills")
+def get_mission_skills() -> Dict[str, Any]:
+    return {"status": "success", "result": {"skills": list_skills()}}
+
+
+@app.post("/api/mission/skills/match")
+def post_mission_skills_match(payload: MissionSkillMatchPayload) -> Dict[str, Any]:
+    matched = match_skill(payload.request_text)
+    return {"status": "success", "result": {"matched_skill": matched}}
 
 
 @app.post("/api/mission/tests/run")

@@ -8,6 +8,8 @@
     "network_agent": "network_agent.graph:agent",
     "uav_agent": "uav_agent.graph:agent",
     "utm_agent": "utm_agent.graph:agent",
+    "dss_agent": "dss_agent.graph:agent",
+    "uss_agent": "uss_agent.graph:agent",
     "mission_supervisor": "mission_supervisor_agent.graph:agent"
   }
 }

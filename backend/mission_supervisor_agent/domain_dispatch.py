@@ -1,8 +1,10 @@
 from typing import Any, Dict
 
+from dss_agent import tools as dss_tools
 from network_agent import tools as net_tools
 from uav_agent import tools as uav_tools
 from utm_agent import tools as utm_tools
+from uss_agent import tools as uss_tools
 
 from .command_types import OBSERVE_OPS, classify_command_operation_type
 
@@ -53,6 +55,28 @@ def dispatch_observe_command(command: Dict[str, Any], state: Dict[str, Any]) -> 
             return net_tools.mcp_kpm_monitor_check.invoke(
                 {"period_ms": int(params.get("period_ms", 1000)), "duration_s": int(params.get("duration_s", 20)), "kpm_metrics": params.get("kpm_metrics", "rru"), "stop_after_check": True}
             )
+
+    if domain == "dss":
+        if op == "state":
+            return dss_tools.dss_state.invoke(params)
+        if op in {"query_operational_intents", "dss_query_operational_intents"}:
+            return dss_tools.dss_query_operational_intents.invoke(params)
+        if op in {"query_subscriptions", "dss_query_subscriptions"}:
+            return dss_tools.dss_query_subscriptions.invoke(params)
+        if op in {"query_participants", "dss_query_participants"}:
+            return dss_tools.dss_query_participants.invoke(params)
+        if op in {"query_notifications", "dss_query_notifications"}:
+            return dss_tools.dss_query_notifications.invoke(params)
+        if op in {"conformance_last", "dss_conformance_last"}:
+            return dss_tools.dss_conformance_last.invoke(params)
+
+    if domain == "uss":
+        if op == "state":
+            return uss_tools.uss_state.invoke(params)
+        if op in {"query_peer_intents", "query_operational_intents", "uss_query_intents"}:
+            return uss_tools.uss_query_intents.invoke(params)
+        if op in {"pull_notifications", "uss_pull_notifications"}:
+            return uss_tools.uss_pull_notifications.invoke(params)
 
     return {"status": "error", "agent": "dispatcher", "error": f"Unsupported observe command {domain}.{op}"}
 
@@ -120,6 +144,34 @@ def dispatch_actuate_command(command: Dict[str, Any], state: Dict[str, Any]) -> 
             return net_tools.mcp_kpm_rc_start.invoke(
                 {"profile": params.get("profile", "kpm"), "period_ms": int(params.get("period_ms", 1000)), "duration_s": int(params.get("duration_s", 60)), "kpm_metrics": params.get("kpm_metrics", "rru")}
             )
+
+    if domain == "dss":
+        if op in {"upsert_operational_intent", "dss_upsert_operational_intent"}:
+            return dss_tools.dss_upsert_operational_intent.invoke(params)
+        if op in {"delete_operational_intent", "dss_delete_operational_intent"}:
+            return dss_tools.dss_delete_operational_intent.invoke(params)
+        if op in {"upsert_subscription", "dss_upsert_subscription"}:
+            return dss_tools.dss_upsert_subscription.invoke(params)
+        if op in {"delete_subscription", "dss_delete_subscription"}:
+            return dss_tools.dss_delete_subscription.invoke(params)
+        if op in {"upsert_participant", "dss_upsert_participant"}:
+            return dss_tools.dss_upsert_participant.invoke(params)
+        if op in {"delete_participant", "dss_delete_participant"}:
+            return dss_tools.dss_delete_participant.invoke(params)
+        if op in {"ack_notification", "dss_ack_notification"}:
+            return dss_tools.dss_ack_notification.invoke(params)
+        if op in {"run_local_conformance", "dss_run_local_conformance"}:
+            return dss_tools.dss_run_local_conformance.invoke(params)
+
+    if domain == "uss":
+        if op in {"publish_intent", "upsert_operational_intent", "uss_publish_intent"}:
+            return uss_tools.uss_publish_intent.invoke(params)
+        if op in {"subscribe_airspace", "upsert_subscription", "uss_subscribe_airspace"}:
+            return uss_tools.uss_subscribe_airspace.invoke(params)
+        if op in {"ack_notification", "uss_ack_notification"}:
+            return uss_tools.uss_ack_notification.invoke(params)
+        if op in {"register_participant", "uss_register_participant"}:
+            return uss_tools.uss_register_participant.invoke(params)
 
     return {"status": "error", "agent": "dispatcher", "error": f"Unsupported actuate command {domain}.{op}"}
 

@@ -80,10 +80,20 @@ curl -sS http://127.0.0.1:8020/api/uav/sim/fleet | jq -r .status
 curl -sS -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8021/api/utm/sync | jq -r .status
 curl -sS "http://127.0.0.1:8022/api/network/mission/state?airspace_segment=sector-A3&selected_uav_id=uav-1" | jq -r '.status // "success"'
 curl -sS http://127.0.0.1:8023/api/mission | jq -r .status
+curl -sS http://127.0.0.1:8024/api/dss/state | jq -r .status
+curl -sS http://127.0.0.1:8025/api/uss/state | jq -r .status
 curl -I http://127.0.0.1:5173
 ```
 
 Expected status values are `success` for the APIs above.
+
+Quick MCP preset switching:
+
+```bash
+./scripts/mcp_profile_preset.sh show
+./scripts/mcp_profile_preset.sh procedures
+./scripts/mcp_profile_preset.sh strict-ops
+```
 
 ## 7) FAA Backend
 
@@ -145,6 +155,12 @@ If mission supervisor API is not needed:
 
 ```bash
 START_MISSION_SUPERVISOR=0 ./bash.sh restart
+```
+
+If DSS/USS APIs are not needed:
+
+```bash
+START_DSS_AGENT=0 START_USS_AGENT=0 ./bash.sh restart
 ```
 
 If ports are already occupied and should be reused:

@@ -111,6 +111,7 @@ class MissionRuntimeService:
         state.setdefault("status", "queued")
         state.setdefault("current_step", 0)
         state.setdefault("intent", {})
+        state.setdefault("selected_skill", {})
         state.setdefault("plan", [])
         state.setdefault("active_runs", {})
         state.setdefault("network_state", {})
@@ -126,6 +127,7 @@ class MissionRuntimeService:
         state.setdefault("decision_log", [])
         state.setdefault("evidence_log", [])
         state.setdefault("command_bus_log", [])
+        state.setdefault("task_memory", {})
         state.setdefault("rollback_context", [])
         state.setdefault("approvals", [])
         state.setdefault("pending_approvals", [])
@@ -276,6 +278,42 @@ class MissionRuntimeService:
         events = self._load_events(mission_id)
         lim = max(1, min(1000, int(limit)))
         return events[-lim:]
+
+    def get_protocol_trace(self, mission_id: str, *, limit: int = 200, include_replayed: bool = True) -> List[Dict[str, Any]]:
+        snapshot = self._load_state(mission_id)
+        if snapshot is None:
+            raise KeyError(mission_id)
+        graph_state = snapshot.get("graph_state")
+        state = dict(graph_state) if isinstance(graph_state, dict) else dict(snapshot)
+        bus_log = state.get("command_bus_log")
+        if not isinstance(bus_log, list):
+            return []
+        rows: List[Dict[str, Any]] = []
+        for item in bus_log:
+            if not isinstance(item, dict):
+                continue
+            replayed = bool(item.get("replayed"))
+            if (not include_replayed) and replayed:
+                continue
+            trace = item.get("protocol_trace")
+            if not isinstance(trace, dict):
+                continue
+            rows.append(
+                {
+                    "ts": item.get("responded_at") or item.get("created_at") or item.get("requested_at"),
+                    "command_id": item.get("command_id"),
+                    "correlation_id": item.get("correlation_id"),
+                    "mission_id": item.get("mission_id"),
+                    "step_id": item.get("step_id"),
+                    "domain": item.get("domain"),
+                    "op": item.get("op"),
+                    "status": item.get("status"),
+                    "replayed": replayed,
+                    "protocol_trace": trace,
+                }
+            )
+        lim = max(1, min(2000, int(limit)))
+        return rows[-lim:]
 
     def list_missions(self, *, limit: int = 50) -> List[Dict[str, Any]]:
         lim = max(1, min(200, int(limit)))

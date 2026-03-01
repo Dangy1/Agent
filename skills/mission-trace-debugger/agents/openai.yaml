@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mission Trace Debugger"
+  short_description: "Analyze mission protocol traces and failures"
+  default_prompt: "Use $mission-trace-debugger to summarize protocol-trace failures and identify the first actionable root cause."
