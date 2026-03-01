@@ -3,6 +3,22 @@ from typing import Any, Dict, List
 from .state import PlanStep
 
 
+def _route_volume4d_from_uav_snapshot(uav: Dict[str, Any]) -> Dict[str, Any]:
+    waypoints = list(uav.get("waypoints") or []) if isinstance(uav.get("waypoints"), list) else []
+    if not waypoints:
+        return {
+            "x": [-1e9, 1e9],
+            "y": [-1e9, 1e9],
+            "z": [0.0, 120.0],
+        }
+    xs = [float(w.get("x", 0.0)) for w in waypoints if isinstance(w, dict)]
+    ys = [float(w.get("y", 0.0)) for w in waypoints if isinstance(w, dict)]
+    zs = [float(w.get("z", 0.0)) for w in waypoints if isinstance(w, dict)]
+    if not xs or not ys or not zs:
+        return {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0.0, 120.0]}
+    return {"x": [min(xs), max(xs)], "y": [min(ys), max(ys)], "z": [max(0.0, min(zs)), max(zs)]}
+
+
 def classify_request(request_text: str) -> str:
     t = (request_text or "").lower()
     if any(k in t for k in ["uav", "drone", "flight", "utm"]):
@@ -58,6 +74,10 @@ def _extract_context(state: Dict[str, Any]) -> Dict[str, Any]:
     utm_license_ok = bool(((utm.get("license_check") or {}).get("ok", True)) if isinstance(utm, dict) else True)
     dss = utm.get("dss") if isinstance(utm, dict) and isinstance(utm.get("dss"), dict) else {}
     dss_blocking_conflict_count = int(dss.get("blocking_conflict_count", 0) or 0) if isinstance(dss, dict) else 0
+    dss_advisory_conflict_count = int(dss.get("advisory_conflict_count", 0) or 0) if isinstance(dss, dict) else 0
+    dss_self_overlap_conflict_count = int(dss.get("self_overlap_conflict_count", 0) or 0) if isinstance(dss, dict) else 0
+    dss_subscription_stale = bool(dss.get("subscription_stale", False)) if isinstance(dss, dict) else False
+    dss_notification_lag_sec_max = float(dss.get("pending_notification_lag_sec_max", 0.0) or 0.0) if isinstance(dss, dict) else 0.0
     net_kpis = net.get("networkKpis") if isinstance(net, dict) else {}
     avg_latency_ms = float((net_kpis.get("avgLatencyMs", 0.0) if isinstance(net_kpis, dict) else 0.0) or 0.0)
     coverage_score = float((net_kpis.get("coverageScorePct", 100.0) if isinstance(net_kpis, dict) else 100.0) or 100.0)
@@ -82,6 +102,10 @@ def _extract_context(state: Dict[str, Any]) -> Dict[str, Any]:
         "utm_license_ok": utm_license_ok,
         "utm_checks_ok": utm_weather_ok and utm_nfz_ok and utm_reg_ok and utm_license_ok,
         "dss_blocking_conflict_count": dss_blocking_conflict_count,
+        "dss_advisory_conflict_count": dss_advisory_conflict_count,
+        "dss_self_overlap_conflict_count": dss_self_overlap_conflict_count,
+        "dss_subscription_stale": dss_subscription_stale,
+        "dss_notification_lag_sec_max": dss_notification_lag_sec_max,
         "approved": approved,
         "uav_active": uav_active,
         "uav_armed": uav_armed,
@@ -90,6 +114,7 @@ def _extract_context(state: Dict[str, Any]) -> Dict[str, Any]:
         "interference_risk_count": interference_risk_count,
         "latency_target": float(latency_target) if isinstance(latency_target, (int, float)) else None,
         "warnings": warnings,
+        "route_volume4d": _route_volume4d_from_uav_snapshot(uav if isinstance(uav, dict) else {}),
     }
 
 
@@ -112,6 +137,8 @@ def _derive_phase(state: Dict[str, Any], domain: str, ctx: Dict[str, Any]) -> st
     if (not ctx["utm_checks_ok"]) or ("uav_low_battery" in ctx["warnings"]):
         return "mitigation"
     if ctx["dss_blocking_conflict_count"] > 0 or "utm_dss_blocking_conflicts" in ctx["warnings"]:
+        return "mitigation"
+    if ctx["dss_subscription_stale"] or "utm_dss_subscription_stale" in ctx["warnings"] or "utm_dss_notification_lag" in ctx["warnings"]:
         return "mitigation"
     if "network_latency_high" in ctx["warnings"] or "network_interference_risk" in ctx["warnings"]:
         return "mitigation" if ctx["uav_active"] else "preflight"
@@ -220,7 +247,57 @@ def _plan_execution(domain: str, ctx: Dict[str, Any]) -> List[PlanStep]:
 
 
 def _plan_mitigation(domain: str, ctx: Dict[str, Any]) -> List[PlanStep]:
-    steps: List[PlanStep] = [
+    steps: List[PlanStep] = []
+    if ctx["dss_blocking_conflict_count"] > 0:
+        steps.extend(
+            [
+                {
+                    "step_id": "dss-query-blocking",
+                    "domain": "utm",
+                    "op": "dss_query_operational_intents",
+                    "params": {"states": ["accepted", "activated", "contingent", "nonconforming"]},
+                    "resource_keys": [],
+                },
+                {
+                    "step_id": "uav-replan-dss-blocking",
+                    "domain": "uav",
+                    "op": "plan_route",
+                    "params": {"uav_id": ctx["uav_id"], "route_id": ctx["route_id"]},
+                    "resource_keys": [f"uav:{ctx['uav_id']}:flight_control"],
+                },
+            ]
+        )
+    elif ctx["dss_advisory_conflict_count"] > 0 or ctx["dss_self_overlap_conflict_count"] > 0:
+        steps.append(
+            {
+                "step_id": "dss-query-advisory",
+                "domain": "utm",
+                "op": "dss_query_operational_intents",
+                "params": {"states": ["accepted", "activated", "contingent", "nonconforming"]},
+                "resource_keys": [],
+            }
+        )
+    if ctx["dss_subscription_stale"] or ctx["dss_notification_lag_sec_max"] > 180.0:
+        steps.extend(
+            [
+                {
+                    "step_id": "dss-query-subscriptions",
+                    "domain": "utm",
+                    "op": "dss_query_subscriptions",
+                    "params": {},
+                    "resource_keys": [],
+                },
+                {
+                    "step_id": "dss-query-notifications",
+                    "domain": "utm",
+                    "op": "dss_query_notifications",
+                    "params": {"status": "pending", "limit": 50},
+                    "resource_keys": [],
+                },
+            ]
+        )
+    steps.extend(
+        [
         {
             "step_id": "uav-hold",
             "domain": "uav",
@@ -229,7 +306,8 @@ def _plan_mitigation(domain: str, ctx: Dict[str, Any]) -> List[PlanStep]:
             "resource_keys": [f"uav:{ctx['uav_id']}:flight_control"],
         },
         {"step_id": "uav-status-mitigation", "domain": "uav", "op": "status", "params": {"uav_id": ctx["uav_id"]}, "resource_keys": []},
-    ]
+        ]
+    )
     if domain == "cross_domain":
         steps[0:0] = [
             {"step_id": "network-health-mitigation", "domain": "network", "op": "health", "params": {}, "resource_keys": []},

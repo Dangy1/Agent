@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import os
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
+from .operational_intents import upsert_intent as dss_upsert_intent
+from .operational_intents import volume4d_overlaps
+
+try:
+    import psycopg
+except Exception:  # pragma: no cover - optional at runtime
+    psycopg = None  # type: ignore[assignment]
 
 
 DEFAULT_REGULATION_PROFILES: Dict[str, Dict[str, Any]] = {
@@ -34,6 +46,280 @@ DEFAULT_REGULATION_PROFILES: Dict[str, Dict[str, Any]] = {
         "max_speed_mps": 35.0,
     },
 }
+
+
+SIMULATOR_AIRSPACE_BOUNDS: Dict[str, Dict[str, List[float]]] = {
+    "sector-A3": {"x": [0.0, 400.0], "y": [0.0, 300.0], "z": [0.0, 120.0]},
+}
+
+FEET_PER_METER = 3.28084
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _read_env_value(env_file: Path, key: str) -> str | None:
+    if not env_file.exists():
+        return None
+    needle = f"{key}="
+    try:
+        for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or not line.startswith(needle):
+                continue
+            value = line[len(needle) :].strip().strip("'\"")
+            return value or None
+    except Exception:
+        return None
+    return None
+
+
+def _resolve_faa_airspace_dsn() -> str | None:
+    direct = str(os.getenv("FAA_AIRSPACE_DSN", "") or "").strip()
+    if direct:
+        return direct
+    env_file = _project_root() / "backend" / "airspace_faa" / ".env"
+    return _read_env_value(env_file, "FAA_AIRSPACE_DSN")
+
+
+def _normalize_faa_geofence_mode(raw: str) -> str:
+    mode = str(raw or "auto").strip().lower()
+    if mode in {"off", "auto", "force"}:
+        return mode
+    return "auto"
+
+
+def _faa_selector_from_airspace_segment(airspace_segment: str) -> tuple[str | None, bool]:
+    raw = str(airspace_segment or "").strip()
+    explicit = raw.lower().startswith("faa:")
+    token = raw[4:].strip() if explicit else raw
+    if not token or token.lower() in {"all", "*"}:
+        return None, explicit
+    if "=" in token:
+        _key, value = token.split("=", 1)
+        token = value.strip()
+    return (token or None), explicit
+
+
+def _looks_like_lon_lat_waypoints(waypoints: List[dict]) -> bool:
+    if not waypoints:
+        return False
+    for wp in waypoints:
+        x = _as_float((wp or {}).get("x", 0.0))
+        y = _as_float((wp or {}).get("y", 0.0))
+        if not (-180.0 <= x <= 180.0 and -90.0 <= y <= 90.0):
+            return False
+    return True
+
+
+def _looks_like_simulator_grid(airspace_segment: str, waypoints: List[dict]) -> bool:
+    seg = str(airspace_segment or "").strip().lower()
+    if not seg.startswith("sector-") or not waypoints:
+        return False
+    for wp in waypoints:
+        x = _as_float((wp or {}).get("x", 0.0))
+        y = _as_float((wp or {}).get("y", 0.0))
+        z = _as_float((wp or {}).get("z", 0.0))
+        if not (0.0 <= x <= 400.0 and 0.0 <= y <= 300.0 and 0.0 <= z <= 120.0):
+            return False
+    return True
+
+
+def _jsonb_to_list_of_dicts(value: Any) -> List[Dict[str, Any]]:
+    if isinstance(value, list):
+        return [dict(v) for v in value if isinstance(v, dict)]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return []
+        if isinstance(parsed, list):
+            return [dict(v) for v in parsed if isinstance(v, dict)]
+    return []
+
+
+class StrategicConflictStatus(str, Enum):
+    NONE = "none"
+    ADVISORY = "advisory"
+    BLOCKING = "blocking"
+
+
+@dataclass
+class StrategicConflictResult:
+    status: StrategicConflictStatus
+    reason: str
+    overlap: bool
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc_dt(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def evaluate_4d_conflict_status(
+    *,
+    candidate_volume4d: Dict[str, Any],
+    other_volume4d: Dict[str, Any],
+    candidate_priority: str = "normal",
+    other_priority: str = "normal",
+) -> StrategicConflictResult:
+    overlap = volume4d_overlaps(candidate_volume4d, other_volume4d)
+    if not overlap:
+        return StrategicConflictResult(status=StrategicConflictStatus.NONE, reason="no_4d_overlap", overlap=False)
+    priority_rank = {"emergency": 0, "high": 1, "normal": 2, "low": 3}
+    c_rank = int(priority_rank.get(str(candidate_priority or "normal").strip().lower(), 2))
+    o_rank = int(priority_rank.get(str(other_priority or "normal").strip().lower(), 2))
+    if c_rank <= o_rank:
+        return StrategicConflictResult(status=StrategicConflictStatus.ADVISORY, reason="4d_overlap_higher_or_equal_candidate_priority", overlap=True)
+    return StrategicConflictResult(status=StrategicConflictStatus.BLOCKING, reason="4d_overlap_lower_candidate_priority", overlap=True)
+
+
+def build_4d_intent_graph(intents: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    nodes: List[Dict[str, Any]] = []
+    active: List[Dict[str, Any]] = []
+    for iid, rec in intents.items():
+        if not isinstance(rec, dict):
+            continue
+        state = str(rec.get("state", "accepted") or "accepted").strip().lower()
+        row = {
+            "intent_id": str(rec.get("intent_id") or iid),
+            "manager_uss_id": str(rec.get("manager_uss_id") or ""),
+            "state": state,
+            "priority": str(rec.get("priority") or "normal"),
+            "version": int(rec.get("version", 0) or 0),
+            "updated_at": str(rec.get("updated_at") or ""),
+        }
+        nodes.append(row)
+        if state in {"accepted", "activated", "contingent", "nonconforming"} and isinstance(rec.get("volume4d"), dict):
+            active.append(dict(rec))
+    edges: List[Dict[str, Any]] = []
+    for i in range(len(active)):
+        a = active[i]
+        aid = str(a.get("intent_id") or "")
+        av = a.get("volume4d") if isinstance(a.get("volume4d"), dict) else {}
+        ap = str(a.get("priority") or "normal")
+        if not aid or not isinstance(av, dict):
+            continue
+        for j in range(i + 1, len(active)):
+            b = active[j]
+            bid = str(b.get("intent_id") or "")
+            bv = b.get("volume4d") if isinstance(b.get("volume4d"), dict) else {}
+            bp = str(b.get("priority") or "normal")
+            if not bid or not isinstance(bv, dict):
+                continue
+            result = evaluate_4d_conflict_status(
+                candidate_volume4d=av,
+                other_volume4d=bv,
+                candidate_priority=ap,
+                other_priority=bp,
+            )
+            if result.overlap is not True:
+                continue
+            edges.append(
+                {
+                    "a_intent_id": aid,
+                    "b_intent_id": bid,
+                    "severity": str(result.status.value),
+                    "reason": str(result.reason),
+                }
+            )
+    return {
+        "generated_at": _now_iso(),
+        "node_count": len(nodes),
+        "active_node_count": len(active),
+        "edge_count": len(edges),
+        "blocking_edge_count": len([e for e in edges if str(e.get("severity")) == "blocking"]),
+        "advisory_edge_count": len([e for e in edges if str(e.get("severity")) == "advisory"]),
+        "nodes": nodes,
+        "edges": edges,
+    }
+
+
+def reserve_corridor_with_lease(
+    intents: Dict[str, Dict[str, Any]],
+    *,
+    uav_id: str,
+    airspace_segment: str,
+    route_id: str,
+    volume4d: Dict[str, Any],
+    manager_uss_id: str = "uss-local",
+    conflict_policy: str = "reject",
+    lease_ttl_s: int = 300,
+    intent_id: str | None = None,
+    metadata: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    iid = str(intent_id or f"corridor:{uav_id}:{airspace_segment}")
+    prev = intents.get(iid) if isinstance(intents.get(iid), dict) else {}
+    lease_seq = 1
+    if isinstance(prev, dict):
+        prev_constraints = prev.get("constraints") if isinstance(prev.get("constraints"), dict) else {}
+        if isinstance(prev_constraints, dict):
+            lease_seq = int(prev_constraints.get("lease_seq", 0) or 0) + 1
+    now = datetime.now(timezone.utc)
+    ttl = max(60, int(lease_ttl_s or 300))
+    lease_expires_at = (now + timedelta(seconds=ttl)).isoformat().replace("+00:00", "Z")
+    constraints = {
+        "reservation_scope": {
+            "uav_id": str(uav_id),
+            "route_id": str(route_id),
+            "airspace_segment": str(airspace_segment),
+        },
+        "lease_seq": lease_seq,
+        "lease_ttl_s": ttl,
+        "lease_issued_at": now.isoformat().replace("+00:00", "Z"),
+        "lease_expires_at": lease_expires_at,
+        "lease_status": "active",
+    }
+    merged_metadata = dict(metadata or {})
+    merged_metadata.setdefault("source", "reserve_corridor")
+    merged_metadata.setdefault("uav_id", str(uav_id))
+    merged_metadata.setdefault("route_id", str(route_id))
+    merged_metadata.setdefault("airspace_segment", str(airspace_segment))
+    upsert = dss_upsert_intent(
+        intents,
+        intent_id=iid,
+        manager_uss_id=str(manager_uss_id or "uss-local"),
+        state="accepted",
+        priority="normal",
+        conflict_policy=conflict_policy,
+        volume4d=dict(volume4d or {}),
+        constraints=constraints,
+        metadata=merged_metadata,
+    )
+    intent = upsert.get("intent") if isinstance(upsert.get("intent"), dict) else {}
+    graph = build_4d_intent_graph(intents)
+    return {
+        **upsert,
+        "reservation_id": iid,
+        "lease": {
+            "intent_id": iid,
+            "lease_seq": lease_seq,
+            "lease_ttl_s": ttl,
+            "lease_expires_at": lease_expires_at,
+            "active": bool(upsert.get("stored")),
+            "expired": bool(_parse_utc_dt(lease_expires_at) and _parse_utc_dt(lease_expires_at) <= now),
+        },
+        "intent_graph": graph,
+        "intent": intent,
+    }
 
 
 def _distance_ok(waypoints: List[dict]) -> bool:
@@ -319,6 +605,15 @@ class UTMApprovalStore:
             return "middle"
         return self._normalize_uav_size_class(rec.get("uav_size_class", rec.get("uav_type")))
 
+    def _authorization_scope_for_license_class(self, license_class: str) -> List[str]:
+        lic = str(license_class or "").strip().upper()
+        base = ["launch", "transit", "altitude_change"]
+        if lic == "BVLOS":
+            return [*base, "beyond_visual_line_of_sight"]
+        if lic == "VLOS":
+            return [*base, "visual_line_of_sight"]
+        return base
+
     def effective_regulations(self, operator_license_id: str | None = None) -> Dict[str, Any]:
         size_class = self._license_size_class(operator_license_id)
         base = dict(self.regulations)
@@ -353,24 +648,335 @@ class UTMApprovalStore:
             "operator_license_id": operator_license_id,
         }
 
-    def check_route_bounds(self, airspace_segment: str, waypoints: List[dict]) -> Dict[str, Any]:
-        bounds = {"sector-A3": {"x": [0.0, 400.0], "y": [0.0, 300.0], "z": [0.0, 120.0]}}
-        seg = bounds.get(airspace_segment, {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0.0, 120.0]})
+    def _check_route_bounds_legacy(self, airspace_segment: str, waypoints: List[dict], *, reason: str = "legacy_bounds") -> Dict[str, Any]:
+        seg = SIMULATOR_AIRSPACE_BOUNDS.get(airspace_segment, {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0.0, 120.0]})
         out_of_bounds: List[Dict[str, Any]] = []
         for i, wp in enumerate(waypoints):
-            x = float(wp.get("x", 0.0))
-            y = float(wp.get("y", 0.0))
-            z = float(wp.get("z", 0.0))
+            x = _as_float((wp or {}).get("x", 0.0))
+            y = _as_float((wp or {}).get("y", 0.0))
+            z = _as_float((wp or {}).get("z", 0.0))
             if not (seg["x"][0] <= x <= seg["x"][1] and seg["y"][0] <= y <= seg["y"][1] and seg["z"][0] <= z <= seg["z"][1]):
                 out_of_bounds.append({"index": i, "wp": {"x": x, "y": y, "z": z}})
+        passed = len(out_of_bounds) == 0
         return {
             "airspace_segment": airspace_segment,
-            "ok": len(out_of_bounds) == 0,
-            "bounds_ok": len(out_of_bounds) == 0,
-            "geofence_ok": len(out_of_bounds) == 0,
+            "ok": passed,
+            "bounds_ok": passed,
+            "geofence_ok": passed,
             "bounds": seg,
             "out_of_bounds": out_of_bounds,
+            "matched_airspace": [],
+            "source": {"engine": "legacy_bounds", "reason": reason},
         }
+
+    def _check_route_bounds_faa(self, airspace_segment: str, waypoints: List[dict]) -> Dict[str, Any]:
+        selector, explicit_selector = _faa_selector_from_airspace_segment(airspace_segment)
+        dsn = _resolve_faa_airspace_dsn()
+        if psycopg is None:
+            return {
+                "status": "unavailable",
+                "reason": "psycopg_not_available",
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+            }
+        if not dsn:
+            return {
+                "status": "unavailable",
+                "reason": "faa_airspace_dsn_missing",
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+            }
+
+        points: List[Dict[str, float]] = []
+        for i, wp in enumerate(waypoints):
+            points.append(
+                {
+                    "index": float(i),
+                    "x": _as_float((wp or {}).get("x", 0.0)),
+                    "y": _as_float((wp or {}).get("y", 0.0)),
+                    "z": _as_float((wp or {}).get("z", 0.0)),
+                }
+            )
+
+        if not points:
+            return {
+                "status": "ok",
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+                "candidate_feature_count": 0,
+                "out_of_bounds": [],
+                "matched_airspace": [],
+                "source": {"engine": "faa_postgis", "selector": selector, "explicit_selector": explicit_selector},
+            }
+
+        count_sql = """
+        SELECT COUNT(*)
+        FROM faa_airspace.airspace_feature f
+        WHERE f.status = 'active'
+          AND f.valid_from <= CURRENT_DATE
+          AND f.valid_to >= CURRENT_DATE
+          AND (
+            %s::text IS NULL
+            OR upper(f.published_id) = upper(%s::text)
+            OR upper(coalesce(f.designator, '')) = upper(%s::text)
+            OR upper(coalesce(f.feature_name, '')) = upper(%s::text)
+          )
+        """
+
+        value_placeholders = ",".join(["(%s,%s,%s,%s)"] * len(points))
+        coverage_sql = f"""
+        WITH wp(idx, lon, lat, alt_m) AS (
+          VALUES {value_placeholders}
+        ),
+        wp_geom AS (
+          SELECT
+            idx,
+            lon,
+            lat,
+            alt_m,
+            ST_SetSRID(ST_MakePoint(lon, lat), 4326) AS geom,
+            (alt_m * {FEET_PER_METER})::double precision AS alt_ft
+          FROM wp
+        ),
+        filtered_features AS (
+          SELECT
+            f.feature_pk,
+            f.published_id,
+            f.feature_name,
+            f.airspace_type,
+            f.class_code,
+            f.designator
+          FROM faa_airspace.airspace_feature f
+          WHERE f.status = 'active'
+            AND f.valid_from <= CURRENT_DATE
+            AND f.valid_to >= CURRENT_DATE
+            AND (
+              %s::text IS NULL
+              OR upper(f.published_id) = upper(%s::text)
+              OR upper(coalesce(f.designator, '')) = upper(%s::text)
+              OR upper(coalesce(f.feature_name, '')) = upper(%s::text)
+            )
+        ),
+        candidate AS (
+          SELECT
+            ff.published_id,
+            ff.feature_name,
+            ff.airspace_type,
+            ff.class_code,
+            ff.designator,
+            v.volume_ordinal,
+            v.lower_limit_value,
+            v.lower_limit_uom,
+            v.upper_limit_value,
+            v.upper_limit_uom,
+            v.lateral_geom
+          FROM filtered_features ff
+          JOIN faa_airspace.airspace_volume v
+            ON v.feature_pk = ff.feature_pk
+        ),
+        matches AS (
+          SELECT
+            wg.idx,
+            wg.lon,
+            wg.lat,
+            wg.alt_m,
+            c.published_id,
+            c.feature_name,
+            c.airspace_type,
+            c.class_code,
+            c.designator,
+            c.volume_ordinal,
+            (
+              ST_Covers(c.lateral_geom, wg.geom)
+              AND (
+                c.lower_limit_value IS NULL
+                OR wg.alt_ft >= (
+                  CASE upper(coalesce(c.lower_limit_uom, 'FT'))
+                    WHEN 'FT' THEN c.lower_limit_value::double precision
+                    WHEN 'M' THEN c.lower_limit_value::double precision * {FEET_PER_METER}
+                    WHEN 'FL' THEN c.lower_limit_value::double precision * 100.0
+                    WHEN 'SFC' THEN 0.0
+                    ELSE c.lower_limit_value::double precision
+                  END
+                )
+              )
+              AND (
+                c.upper_limit_value IS NULL
+                OR wg.alt_ft <= (
+                  CASE upper(coalesce(c.upper_limit_uom, 'FT'))
+                    WHEN 'FT' THEN c.upper_limit_value::double precision
+                    WHEN 'M' THEN c.upper_limit_value::double precision * {FEET_PER_METER}
+                    WHEN 'FL' THEN c.upper_limit_value::double precision * 100.0
+                    WHEN 'SFC' THEN 0.0
+                    ELSE c.upper_limit_value::double precision
+                  END
+                )
+              )
+            ) AS is_match
+          FROM wp_geom wg
+          LEFT JOIN candidate c
+            ON c.lateral_geom && wg.geom
+        )
+        SELECT
+          idx,
+          lon,
+          lat,
+          alt_m,
+          COALESCE(bool_or(is_match), FALSE) AS covered,
+          COALESCE(
+            jsonb_agg(
+              DISTINCT jsonb_build_object(
+                'published_id', published_id,
+                'feature_name', feature_name,
+                'airspace_type', airspace_type,
+                'class_code', class_code,
+                'designator', designator,
+                'volume_ordinal', volume_ordinal
+              )
+            ) FILTER (WHERE is_match),
+            '[]'::jsonb
+          ) AS matches
+        FROM matches
+        GROUP BY idx, lon, lat, alt_m
+        ORDER BY idx
+        """
+
+        try:
+            with psycopg.connect(dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(count_sql, (selector, selector, selector, selector))
+                    count_row = cur.fetchone()
+                    candidate_feature_count = int((count_row or [0])[0] or 0)
+                    if candidate_feature_count <= 0:
+                        return {
+                            "status": "no_candidate_airspace",
+                            "selector": selector,
+                            "explicit_selector": explicit_selector,
+                            "candidate_feature_count": candidate_feature_count,
+                        }
+
+                    params: List[Any] = []
+                    for point in points:
+                        params.extend([int(point["index"]), point["x"], point["y"], point["z"]])
+                    params.extend([selector, selector, selector, selector])
+                    cur.execute(coverage_sql, params)
+                    rows = cur.fetchall()
+        except Exception as exc:
+            return {
+                "status": "query_failed",
+                "reason": str(exc),
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+            }
+
+        out_of_bounds: List[Dict[str, Any]] = []
+        matched_airspace_by_key: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            idx = int(_as_float(row[0], 0.0))
+            x = _as_float(row[1], 0.0)
+            y = _as_float(row[2], 0.0)
+            z = _as_float(row[3], 0.0)
+            covered = bool(row[4])
+            matches = _jsonb_to_list_of_dicts(row[5])
+            if not covered:
+                out_of_bounds.append({"index": idx, "wp": {"x": x, "y": y, "z": z}})
+            for match in matches:
+                key = ":".join(
+                    [
+                        str(match.get("published_id", "")),
+                        str(match.get("airspace_type", "")),
+                        str(match.get("volume_ordinal", "")),
+                    ]
+                )
+                if key and key not in matched_airspace_by_key:
+                    matched_airspace_by_key[key] = match
+
+        return {
+            "status": "ok",
+            "selector": selector,
+            "explicit_selector": explicit_selector,
+            "candidate_feature_count": candidate_feature_count,
+            "out_of_bounds": out_of_bounds,
+            "matched_airspace": list(matched_airspace_by_key.values()),
+            "source": {"engine": "faa_postgis", "selector": selector, "explicit_selector": explicit_selector},
+        }
+
+    def check_route_bounds(self, airspace_segment: str, waypoints: List[dict]) -> Dict[str, Any]:
+        mode = _normalize_faa_geofence_mode(str(os.getenv("UTM_FAA_GEOFENCE_MODE", "auto") or "auto"))
+        selector, explicit_selector = _faa_selector_from_airspace_segment(airspace_segment)
+
+        should_try_faa = False
+        if mode == "force" or explicit_selector:
+            should_try_faa = True
+        elif mode == "auto":
+            should_try_faa = _looks_like_lon_lat_waypoints(waypoints) and not _looks_like_simulator_grid(airspace_segment, waypoints)
+
+        if should_try_faa:
+            faa_result = self._check_route_bounds_faa(airspace_segment, waypoints)
+            if str(faa_result.get("status", "")) == "ok":
+                out_of_bounds = list(faa_result.get("out_of_bounds") or [])
+                passed = len(out_of_bounds) == 0
+                return {
+                    "airspace_segment": airspace_segment,
+                    "ok": passed,
+                    "bounds_ok": passed,
+                    "geofence_ok": passed,
+                    "bounds": {
+                        "engine": "faa_postgis",
+                        "selector": faa_result.get("selector"),
+                        "candidate_feature_count": int(faa_result.get("candidate_feature_count", 0) or 0),
+                    },
+                    "out_of_bounds": out_of_bounds,
+                    "matched_airspace": list(faa_result.get("matched_airspace") or []),
+                    "source": dict(faa_result.get("source") or {}),
+                }
+
+            fail_closed = mode == "force" or explicit_selector
+            if fail_closed:
+                out_of_bounds = [
+                    {
+                        "index": i,
+                        "wp": {
+                            "x": _as_float((wp or {}).get("x", 0.0)),
+                            "y": _as_float((wp or {}).get("y", 0.0)),
+                            "z": _as_float((wp or {}).get("z", 0.0)),
+                        },
+                    }
+                    for i, wp in enumerate(waypoints)
+                ]
+                return {
+                    "airspace_segment": airspace_segment,
+                    "ok": False,
+                    "bounds_ok": False,
+                    "geofence_ok": False,
+                    "bounds": {
+                        "engine": "faa_postgis",
+                        "selector": selector,
+                        "error": str(faa_result.get("status") or "unknown_error"),
+                        "error_detail": str(faa_result.get("reason") or ""),
+                    },
+                    "out_of_bounds": out_of_bounds,
+                    "matched_airspace": [],
+                    "source": {
+                        "engine": "faa_postgis",
+                        "selector": selector,
+                        "explicit_selector": explicit_selector,
+                        "status": str(faa_result.get("status") or "unknown_error"),
+                        "reason": str(faa_result.get("reason") or ""),
+                    },
+                }
+
+            return self._check_route_bounds_legacy(
+                airspace_segment,
+                waypoints,
+                reason=f"fallback_after_faa_{str(faa_result.get('status') or 'unknown')}",
+            )
+
+        if mode == "off":
+            return self._check_route_bounds_legacy(airspace_segment, waypoints, reason="faa_geofence_mode_off")
+        if _looks_like_simulator_grid(airspace_segment, waypoints):
+            return self._check_route_bounds_legacy(airspace_segment, waypoints, reason="simulator_grid_detected")
+        return self._check_route_bounds_legacy(airspace_segment, waypoints, reason="faa_auto_not_applicable")
 
     def check_no_fly_zones(self, waypoints: List[dict]) -> Dict[str, Any]:
         hits = []
@@ -505,20 +1111,71 @@ class UTMApprovalStore:
         required_class: str = "VLOS",
     ) -> Dict[str, Any]:
         if not operator_license_id:
-            return {"ok": False, "error": "missing_operator_license_id"}
+            return {
+                "ok": False,
+                "error": "missing_operator_license_id",
+                "authorization": {
+                    "authorized": False,
+                    "reason": "missing_operator_license_id",
+                    "required_class": str(required_class),
+                },
+            }
         rec = self.operator_licenses.get(operator_license_id)
         if not rec:
-            return {"ok": False, "error": "license_not_found", "operator_license_id": operator_license_id}
+            return {
+                "ok": False,
+                "error": "license_not_found",
+                "operator_license_id": operator_license_id,
+                "authorization": {
+                    "authorized": False,
+                    "reason": "license_not_found",
+                    "required_class": str(required_class),
+                    "operator_license_id": operator_license_id,
+                },
+            }
         if not rec.get("active", False):
-            return {"ok": False, "error": "license_inactive", "operator_license_id": operator_license_id, "license": rec}
+            return {
+                "ok": False,
+                "error": "license_inactive",
+                "operator_license_id": operator_license_id,
+                "license": rec,
+                "authorization": {
+                    "authorized": False,
+                    "reason": "license_inactive",
+                    "required_class": str(required_class),
+                    "operator_license_id": operator_license_id,
+                },
+            }
         expires = str(rec.get("expires_at", "") or "")
         try:
             if expires:
                 dt = datetime.fromisoformat(expires.replace("Z", "+00:00"))
                 if dt < datetime.now(timezone.utc):
-                    return {"ok": False, "error": "license_expired", "operator_license_id": operator_license_id, "license": rec}
+                    return {
+                        "ok": False,
+                        "error": "license_expired",
+                        "operator_license_id": operator_license_id,
+                        "license": rec,
+                        "authorization": {
+                            "authorized": False,
+                            "reason": "license_expired",
+                            "required_class": str(required_class),
+                            "operator_license_id": operator_license_id,
+                        },
+                    }
         except Exception:
-            return {"ok": False, "error": "license_expiry_parse_failed", "operator_license_id": operator_license_id, "license": rec}
+            return {
+                "ok": False,
+                "error": "license_expiry_parse_failed",
+                "operator_license_id": operator_license_id,
+                "license": rec,
+                "authorization": {
+                    "authorized": False,
+                    "reason": "license_expiry_parse_failed",
+                    "required_class": str(required_class),
+                    "operator_license_id": operator_license_id,
+                },
+            }
         lic_class = str(rec.get("license_class", ""))
         allowed = {"VLOS": {"VLOS", "BVLOS"}, "BVLOS": {"BVLOS"}}
         if lic_class not in allowed.get(required_class, {required_class}):
@@ -528,9 +1185,24 @@ class UTMApprovalStore:
                 "operator_license_id": operator_license_id,
                 "license": rec,
                 "required_class": required_class,
+                "actual_license_class": lic_class,
+                "authorization": {
+                    "authorized": False,
+                    "reason": "license_class_insufficient",
+                    "required_class": str(required_class),
+                    "actual_license_class": lic_class,
+                    "operator_license_id": operator_license_id,
+                },
             }
         normalized = dict(rec)
         normalized["uav_size_class"] = self._normalize_uav_size_class(rec.get("uav_size_class", rec.get("uav_type")))
+        authorization = {
+            "authorized": True,
+            "required_class": str(required_class),
+            "actual_license_class": lic_class,
+            "operator_license_id": operator_license_id,
+            "allowed_operations": self._authorization_scope_for_license_class(lic_class),
+        }
         return {
             "ok": True,
             "operator_license_id": operator_license_id,
@@ -538,6 +1210,7 @@ class UTMApprovalStore:
             "required_class": required_class,
             "uav_size_class": normalized["uav_size_class"],
             "effective_regulations": self.effective_regulations(operator_license_id),
+            "authorization": authorization,
         }
 
     def register_operator_license(
@@ -683,6 +1356,16 @@ class UTMApprovalStore:
                 "time_window": [now.isoformat().replace("+00:00", "Z"), expires_at],
             },
             "operator_license_id": operator_license_id,
+            "authorization": (
+                dict((checks.get("operator_license") or {}).get("authorization"))
+                if isinstance(checks.get("operator_license"), dict) and isinstance((checks.get("operator_license") or {}).get("authorization"), dict)
+                else {
+                    "authorized": False,
+                    "reason": "authorization_unavailable",
+                    "required_class": str(required_license_class),
+                    "operator_license_id": operator_license_id,
+                }
+            ),
         }
         self.approvals[f"{uav_id}:{route_id}"] = rec
         return rec
@@ -697,6 +1380,9 @@ class UTMApprovalStore:
             return {"ok": False, "error": "approval_scope_mismatch"}
         if not approval.get("approved") or not approval.get("signature_verified"):
             return {"ok": False, "error": "approval_not_valid"}
+        authorization = approval.get("authorization") if isinstance(approval.get("authorization"), dict) else {}
+        if isinstance(authorization, dict) and authorization and authorization.get("authorized") is False:
+            return {"ok": False, "error": "approval_authorization_invalid", "details": authorization}
         expires_at = str(approval.get("expires_at", "") or "")
         try:
             if expires_at:

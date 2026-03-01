@@ -1,0 +1,2 @@
+authority,published_id,airspace_type,valid_from,schedule_key,timezone_name,active_from,active_to,recurrence_rule,notam_id,status,notes,attrs_json
+FAA,R-2309,RESTRICTED,2025-11-27,daily-window,America/New_York,2025-11-27T12:00:00Z,2025-11-27T22:00:00Z,"FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR",,scheduled,Example weekday activity window,"{""source"":""manual""}"

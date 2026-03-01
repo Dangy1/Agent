@@ -11,8 +11,9 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import urlopen
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, Request
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import JSONResponse
 except Exception as e:  # pragma: no cover
     raise RuntimeError("uav_agent.api requires fastapi and pydantic") from e
 
@@ -24,6 +25,7 @@ from .api_models import (
     HoldPayload,
     LicenseCheckPayload,
     LicensePayload,
+    MissionActionPayload,
     NetworkBaseStationUpdatePayload,
     NetworkOptimizePayload,
     NetworkStateQuery,
@@ -46,6 +48,7 @@ from .api_models import (
     WeatherPayload,
     _dump_waypoint_payload_model,
 )
+from .command_adapter import get_uav_control_adapter_status
 from .copilot_utils import _chat_completion_json, _utm_nfz_conflict_feedback
 from .graph import run_copilot_workflow
 from .simulator import SIM
@@ -64,7 +67,8 @@ from .tools import (
 )
 from agent_db import AgentDB
 from network_agent.service import NETWORK_MISSION_SERVICE
-from utm_agent.operational_intents import upsert_intent as dss_upsert_intent
+from utm_agent.dss_gateway import gateway_upsert_operational_intent
+from utm_agent.security_controls import authorize_service_request, ensure_security_state
 from utm_agent.service import UTM_SERVICE
 
 app = FastAPI(title="UAV/UTM Simulator API")
@@ -89,6 +93,57 @@ REAL_UTM_SYNC_TIMEOUT_S = float((os.getenv("UAV_REAL_UTM_SYNC_TIMEOUT_S", "1.5")
 UAV_UTM_LOCAL_ONLY = str(os.getenv("UAV_UTM_LOCAL_ONLY", "1")).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _uav_enforce_utm_service_auth() -> bool:
+    raw = str(
+        os.getenv(
+            "UAV_ENFORCE_UTM_SERVICE_AUTH",
+            os.getenv("UTM_ENFORCE_SERVICE_AUTH", "true"),
+        )
+        or "true"
+    ).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _get_uav_security_controls() -> Dict[str, Any]:
+    current = UTM_DB_MIRROR.get_state("security_controls")
+    state = ensure_security_state(dict(current) if isinstance(current, dict) else None)
+    if not isinstance(current, dict):
+        UTM_DB_MIRROR.set_state("security_controls", state)
+    return state
+
+
+@app.middleware("http")
+async def _uav_utm_service_auth_middleware(request: Request, call_next):
+    path = str(request.url.path or "")
+    method = str(request.method or "GET").upper()
+    if not path.startswith("/api/utm"):
+        return await call_next(request)
+    # Always allow CORS preflight requests.
+    if method == "OPTIONS":
+        return await call_next(request)
+    # Keep liveness-style endpoints open for local orchestration probes.
+    if path in {"/api/utm/state", "/api/utm/live/source"} and method == "GET":
+        return await call_next(request)
+    decision = authorize_service_request(
+        path=path,
+        method=method,
+        authorization_header=str(request.headers.get("authorization", "")),
+        state=_get_uav_security_controls(),
+        enforce=_uav_enforce_utm_service_auth(),
+    )
+    if decision.get("ok") is not True:
+        status_code = 401 if str(decision.get("error", "")).startswith("missing_") else 403
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": "error",
+                "error": decision.get("error"),
+                "required_role": decision.get("required_role"),
+            },
+        )
+    return await call_next(request)
+
+
 def _restore_uav_state() -> None:
     fleet = UAV_DB.get_state("fleet")
     if isinstance(fleet, dict):
@@ -108,6 +163,85 @@ def _persist_uav_state() -> None:
 
 
 def _log_uav_action(action: str, *, payload: Any = None, result: Any = None, entity_id: str | None = None) -> Dict[str, Any]:
+    def _extract_uav_id() -> str:
+        if isinstance(payload, dict):
+            pid = str(payload.get("uav_id", "")).strip()
+            if pid:
+                return pid
+        if isinstance(entity_id, str) and entity_id.strip():
+            return entity_id.strip()
+        if isinstance(result, dict):
+            rid = str(result.get("uav_id", "")).strip()
+            if rid:
+                return rid
+            nested = result.get("result") if isinstance(result.get("result"), dict) else {}
+            rid2 = str(nested.get("uav_id", "")).strip() if isinstance(nested, dict) else ""
+            if rid2:
+                return rid2
+        return ""
+
+    def _extract_sim_snapshot() -> Dict[str, Any]:
+        if isinstance(result, dict):
+            nested = result.get("result")
+            if isinstance(nested, dict):
+                if isinstance(nested.get("result"), dict):
+                    return dict(nested.get("result"))  # tool response shape
+                if "uav_id" in nested and "flight_phase" in nested:
+                    return dict(nested)
+            if "uav_id" in result and "flight_phase" in result:
+                return dict(result)
+        return {}
+
+    control_actions = {
+        "launch",
+        "launch_skipped_already_launched",
+        "step",
+        "hold",
+        "resume",
+        "rth",
+        "land",
+        "end_mission_cleanup",
+    }
+    if action in control_actions or action.endswith("_blocked") or action.startswith("mission_action_"):
+        uav_id = _extract_uav_id()
+        if uav_id:
+            snap = _extract_sim_snapshot()
+            now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            station_state = UAV_DB.get_state("uav_station_state")
+            station_map = dict(station_state) if isinstance(station_state, dict) else {}
+            status = str(result.get("status", "unknown")) if isinstance(result, dict) else "unknown"
+            if action.endswith("_blocked"):
+                status = "blocked"
+            row = {
+                "uav_id": uav_id,
+                "last_control_action": action,
+                "last_control_status": status,
+                "last_control_at": now_iso,
+                "phase": str(snap.get("flight_phase", "")) if snap else None,
+                "armed": bool(snap.get("armed")) if snap else None,
+                "active": bool(snap.get("active")) if snap else None,
+                "waypoint_index": snap.get("waypoint_index") if snap else None,
+                "waypoints_total": snap.get("waypoints_total") if snap else None,
+                "route_progress_pct": snap.get("route_progress_pct") if snap else None,
+            }
+            if isinstance(result, dict) and isinstance(result.get("issues"), list):
+                row["issues"] = [str(x) for x in result.get("issues", [])]
+            station_map[uav_id] = row
+            UAV_DB.set_state("uav_station_state", station_map)
+
+            station_log = UAV_DB.get_state("uav_station_control_log")
+            rows = list(station_log) if isinstance(station_log, list) else []
+            rows.append(
+                {
+                    "at": now_iso,
+                    "uav_id": uav_id,
+                    "action": action,
+                    "status": status,
+                    "payload": payload if isinstance(payload, dict) else None,
+                    "snapshot": snap if snap else None,
+                }
+            )
+            UAV_DB.set_state("uav_station_control_log", rows[-5000:])
     _persist_uav_state()
     return UAV_DB.record_action(action, payload=payload, result=result, entity_id=entity_id)
 
@@ -599,7 +733,11 @@ def _sync_sim_utm_from_session(*, user_id: str, uav_id: str) -> Dict[str, Any]:
     if isinstance(session.get("utm_geofence_result"), dict):
         SIM.set_geofence_result(uav_id, dict(session["utm_geofence_result"]))
     if isinstance(session.get("utm_approval"), dict):
-        SIM.set_approval(uav_id, dict(session["utm_approval"]))
+        approval = dict(session["utm_approval"])
+        SIM.set_approval(uav_id, approval)
+        # Keep tool-level UTM launch validation aligned with persisted session approvals.
+        route_id = str(approval.get("route_id") or SIM.status(uav_id).get("route_id", "route-1") or "route-1")
+        UTM_SERVICE.approvals[f"{uav_id}:{route_id}"] = approval
     return session
 
 
@@ -616,6 +754,203 @@ def _get_local_dss_operational_intents() -> Dict[str, Dict[str, Any]]:
 
 def _set_local_dss_operational_intents(values: Dict[str, Dict[str, Any]]) -> None:
     UTM_DB_MIRROR.set_state("dss_operational_intents", values)
+
+
+def _intent_uav_id(intent_id: str, row: Dict[str, Any]) -> str:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    meta_uav = str(metadata.get("uav_id", "")).strip() if isinstance(metadata, dict) else ""
+    if meta_uav:
+        return meta_uav
+    iid = str(intent_id or row.get("intent_id") or "").strip()
+    if ":" in iid:
+        parts = iid.split(":")
+        if len(parts) >= 3:
+            return str(parts[1]).strip()
+    return ""
+
+
+def _cleanup_deleted_uav_artifacts(uav_id: str) -> Dict[str, Any]:
+    removed_session_keys: List[str] = []
+    sessions = _get_uav_utm_sessions()
+    next_sessions: Dict[str, Dict[str, Any]] = {}
+    for key, row in sessions.items():
+        row_uav = str(row.get("uav_id", "")).strip() if isinstance(row, dict) else ""
+        if row_uav == uav_id or str(key).endswith(f":{uav_id}"):
+            removed_session_keys.append(str(key))
+            continue
+        next_sessions[str(key)] = dict(row) if isinstance(row, dict) else {}
+    if len(next_sessions) != len(sessions):
+        _set_uav_utm_sessions(next_sessions)
+
+    intents = _get_local_dss_operational_intents()
+    removed_intent_ids: List[str] = []
+    next_intents: Dict[str, Dict[str, Any]] = {}
+    for intent_id, row in intents.items():
+        row_uav_id = _intent_uav_id(str(intent_id), row)
+        if row_uav_id == uav_id:
+            removed_intent_ids.append(str(intent_id))
+            continue
+        next_intents[str(intent_id)] = dict(row)
+    if len(next_intents) != len(intents):
+        _set_local_dss_operational_intents(next_intents)
+
+    removed_notification_count = 0
+    notifications_raw = UTM_DB_MIRROR.get_state("dss_notifications")
+    if isinstance(notifications_raw, list) and removed_intent_ids:
+        keep_notifications: List[Dict[str, Any]] = []
+        removed_intent_set = set(removed_intent_ids)
+        for rec in notifications_raw:
+            if not isinstance(rec, dict):
+                continue
+            source_intent_id = str(rec.get("source_intent_id", "")).strip()
+            if source_intent_id and source_intent_id in removed_intent_set:
+                removed_notification_count += 1
+                continue
+            keep_notifications.append(dict(rec))
+        if removed_notification_count > 0:
+            UTM_DB_MIRROR.set_state("dss_notifications", keep_notifications)
+
+    removed_subscription_ids: List[str] = []
+    subscriptions_raw = UTM_DB_MIRROR.get_state("dss_subscriptions")
+    if isinstance(subscriptions_raw, dict):
+        next_subs: Dict[str, Dict[str, Any]] = {}
+        for subscription_id, row in subscriptions_raw.items():
+            if not isinstance(subscription_id, str) or not isinstance(row, dict):
+                continue
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            row_uav = str(metadata.get("uav_id", "")).strip() if isinstance(metadata, dict) else ""
+            if row_uav == uav_id:
+                removed_subscription_ids.append(subscription_id)
+                continue
+            next_subs[subscription_id] = dict(row)
+        if len(next_subs) != len(subscriptions_raw):
+            UTM_DB_MIRROR.set_state("dss_subscriptions", next_subs)
+
+    return {
+        "removed_session_count": len(removed_session_keys),
+        "removed_session_keys": removed_session_keys,
+        "removed_intent_count": len(removed_intent_ids),
+        "removed_intent_ids": removed_intent_ids,
+        "removed_notification_count": int(removed_notification_count),
+        "removed_subscription_count": len(removed_subscription_ids),
+        "removed_subscription_ids": removed_subscription_ids,
+    }
+
+
+def _is_http_callback_url(url: Any) -> bool:
+    value = str(url or "").strip().lower()
+    return value.startswith("http://") or value.startswith("https://")
+
+
+def _cleanup_stale_dss_runtime_artifacts(max_stale_minutes: int = 15) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    threshold_s = float(max(1, int(max_stale_minutes)) * 60)
+    now_iso = now.isoformat().replace("+00:00", "Z")
+
+    removed_subscription_ids: List[str] = []
+    subscriptions_raw = UTM_DB_MIRROR.get_state("dss_subscriptions")
+    remaining_subscription_count = 0
+    if isinstance(subscriptions_raw, dict):
+        next_subs: Dict[str, Dict[str, Any]] = {}
+        for subscription_id, row in subscriptions_raw.items():
+            if not isinstance(subscription_id, str) or not isinstance(row, dict):
+                continue
+            expires_at = _parse_utc_dt(row.get("expires_at"))
+            updated_at = _parse_utc_dt(row.get("updated_at"))
+            expired = isinstance(expires_at, datetime) and expires_at < now
+            stale = isinstance(updated_at, datetime) and (now - updated_at).total_seconds() > threshold_s
+            if expired or stale:
+                removed_subscription_ids.append(subscription_id)
+                continue
+            next_subs[subscription_id] = dict(row)
+        if len(next_subs) != len(subscriptions_raw):
+            UTM_DB_MIRROR.set_state("dss_subscriptions", next_subs)
+        remaining_subscription_count = len(next_subs)
+
+    auto_acked_notification_ids: List[str] = []
+    remaining_pending_notifications = 0
+    notifications_raw = UTM_DB_MIRROR.get_state("dss_notifications")
+    if isinstance(notifications_raw, list):
+        updated_notifications: List[Dict[str, Any]] = []
+        changed = False
+        for rec in notifications_raw:
+            if not isinstance(rec, dict):
+                continue
+            row = dict(rec)
+            status = str(row.get("status", "")).strip().lower()
+            if status == "pending":
+                callback_url = str(row.get("callback_url", "")).strip()
+                created_at = _parse_utc_dt(row.get("created_at"))
+                lag_s = (now - created_at).total_seconds() if isinstance(created_at, datetime) else 0.0
+                non_http_callback = not _is_http_callback_url(callback_url)
+                stale_pending = lag_s > threshold_s
+                if non_http_callback or stale_pending:
+                    row["status"] = "acked"
+                    row["acked_at"] = now_iso
+                    if not str(row.get("last_error", "")).strip():
+                        row["last_error"] = "auto_acked_queue_only_callback" if non_http_callback else "auto_acked_stale_pending_notification"
+                    nid = str(row.get("notification_id", "")).strip()
+                    if nid:
+                        auto_acked_notification_ids.append(nid)
+                    changed = True
+                else:
+                    remaining_pending_notifications += 1
+            updated_notifications.append(row)
+        if changed:
+            UTM_DB_MIRROR.set_state("dss_notifications", updated_notifications[-5000:])
+
+    return {
+        "removed_stale_subscription_count": len(removed_subscription_ids),
+        "removed_stale_subscription_ids": removed_subscription_ids,
+        "auto_acked_notification_count": len(auto_acked_notification_ids),
+        "auto_acked_notification_ids": auto_acked_notification_ids,
+        "remaining_subscription_count": remaining_subscription_count,
+        "remaining_pending_notification_count": remaining_pending_notifications,
+        "stale_window_minutes": int(max_stale_minutes),
+    }
+
+
+def _end_mission_cleanup_for_scope(
+    *,
+    user_id: str,
+    uav_id: str,
+    cleanup_stale: bool = True,
+    stale_window_minutes: int = 15,
+) -> Dict[str, Any]:
+    resolved_user_id = _normalize_user_id(user_id)
+    pre = SIM.status_if_exists(uav_id)
+    if not isinstance(pre, dict):
+        return {"status": "error", "error": "uav_not_found", "uav_id": uav_id, "user_id": resolved_user_id}
+
+    pre_armed = bool(pre.get("armed"))
+    pre_active = bool(pre.get("active"))
+    pre_phase = str(pre.get("flight_phase", "")).upper()
+    forced_land = bool(pre_armed or pre_active or pre_phase != "LAND")
+    if forced_land:
+        SIM.land(uav_id)
+    SIM.set_approval(uav_id, {})
+    SIM.set_geofence_result(uav_id, {})
+    _touch_mission_execution(user_id=resolved_user_id, uav_id=uav_id, action="land")
+
+    mission = _current_mission_record(user_id=resolved_user_id, uav_id=uav_id)
+    artifact_cleanup = _cleanup_deleted_uav_artifacts(uav_id)
+    stale_cleanup = _cleanup_stale_dss_runtime_artifacts(max_stale_minutes=stale_window_minutes) if cleanup_stale else {}
+    post = SIM.status(uav_id)
+
+    return {
+        "status": "success",
+        "uav_id": uav_id,
+        "user_id": resolved_user_id,
+        "forced_land": forced_land,
+        "pre_flight_phase": pre_phase,
+        "post_flight_phase": str(post.get("flight_phase", "")),
+        "mission": mission,
+        "cleanup": {
+            "artifacts": artifact_cleanup,
+            "stale_runtime": stale_cleanup,
+        },
+        "uav": post,
+    }
 
 
 def _route_volume4d_for_waypoints(
@@ -648,36 +983,68 @@ def _upsert_local_dss_intent_for_uav(
     route_id: str,
     waypoints: list[dict],
     airspace_segment: str,
+    state: str = "accepted",
     conflict_policy: str = "reject",
+    source: str = "uav_request_approval",
+    lifecycle_phase: str | None = None,
+    metadata_extra: Optional[Dict[str, Any]] = None,
     planned_start_at: str | None = None,
     planned_end_at: str | None = None,
 ) -> Dict[str, Any]:
-    intents = _get_local_dss_operational_intents()
-    intent_id = f"{_normalize_user_id(user_id)}:{uav_id}:{route_id}"
+    norm_user = _normalize_user_id(user_id)
+    intent_id = f"{norm_user}:{uav_id}:{route_id}"
     volume4d = _route_volume4d_for_waypoints(
         waypoints,
         planned_start_at=planned_start_at,
         planned_end_at=planned_end_at,
     )
-    out = dss_upsert_intent(
-        intents,
-        intent_id=intent_id,
-        manager_uss_id=f"uss-local-{_normalize_user_id(user_id)}",
-        state="accepted",
-        priority="normal",
-        conflict_policy=conflict_policy,
-        volume4d=volume4d,
-        metadata={
-            "source": "uav_request_approval",
-            "user_id": _normalize_user_id(user_id),
+    intents = _get_local_dss_operational_intents()
+    prev = intents.get(intent_id) if isinstance(intents.get(intent_id), dict) else {}
+    metadata = dict(prev.get("metadata")) if isinstance(prev.get("metadata"), dict) else {}
+    metadata.update(
+        {
+            "source": source,
+            "user_id": norm_user,
             "uav_id": uav_id,
             "route_id": route_id,
             "airspace_segment": airspace_segment,
+            "lifecycle_phase": str(lifecycle_phase or source),
+            "lifecycle_updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+    )
+    if isinstance(metadata_extra, dict):
+        metadata.update(metadata_extra)
+    effective_state = str(state or prev.get("state") or "accepted")
+    out = gateway_upsert_operational_intent(
+        UTM_DB_MIRROR,
+        {
+            "intent_id": intent_id,
+            "manager_uss_id": f"uss-local-{norm_user}",
+            "state": effective_state,
+            "priority": str(prev.get("priority") or "normal"),
+            "conflict_policy": conflict_policy,
+            "ovn": str(prev.get("ovn")) if str(prev.get("ovn", "")).strip() else None,
+            "uss_base_url": str(prev.get("uss_base_url")) if isinstance(prev, dict) else None,
+            "volume4d": volume4d,
+            "metadata": metadata,
         },
     )
-    if out.get("stored"):
-        _set_local_dss_operational_intents(intents)
-    return out
+    if str(out.get("status")) != "success":
+        return {
+            "status": "error",
+            "stored": False,
+            "error": out.get("error"),
+            "details": out.get("details"),
+            "adapter_mode": out.get("adapter_mode"),
+            "degraded": out.get("degraded"),
+        }
+    result = out.get("result") if isinstance(out.get("result"), dict) else {}
+    return {
+        **result,
+        "adapter_mode": out.get("adapter_mode"),
+        "degraded": out.get("degraded"),
+        "failover_reason": out.get("failover_reason"),
+    }
 
 
 def _ensure_registry_seed() -> None:
@@ -685,31 +1052,67 @@ def _ensure_registry_seed() -> None:
     users = registry.get("users") if isinstance(registry.get("users"), dict) else {}
     uavs = registry.get("uavs") if isinstance(registry.get("uavs"), dict) else {}
     changed = False
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     if not users and not uavs:
-        users["user-1"] = {"uav_ids": [], "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")}
+        starter_uav_id = "uav-1"
+        fleet = SIM.fleet_snapshot()
+        if starter_uav_id not in fleet:
+            first_fleet_id = next((str(uid) for uid in fleet.keys() if str(uid).strip()), "")
+            starter_uav_id = first_fleet_id or starter_uav_id
+            if starter_uav_id not in fleet:
+                SIM.get_or_create(starter_uav_id)
+        users["user-1"] = {"uav_ids": [starter_uav_id], "updated_at": now_iso}
+        uavs[starter_uav_id] = {
+            "owner_user_id": "user-1",
+            "operator_license_id": "op-001",
+            "standardized_profile": dict(_UAV_REGISTRY_PROFILE_DEFAULTS),
+            "updated_at": now_iso,
+        }
         changed = True
-    fleet = SIM.fleet_snapshot()
-    for uav_id in fleet.keys():
-        if not isinstance(uavs.get(uav_id), dict):
-            uavs[uav_id] = {
-                "owner_user_id": "user-1",
-                "operator_license_id": "op-001",
-                "standardized_profile": dict(_UAV_REGISTRY_PROFILE_DEFAULTS),
-                "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            }
+    # Keep user->uav mappings strict: only retain IDs that still exist and are owned by that user.
+    for owner_user_id, row in list(users.items()):
+        norm_owner = _normalize_user_id(str(owner_user_id) if owner_user_id is not None else None)
+        if not isinstance(row, dict):
+            users[owner_user_id] = {"uav_ids": [], "updated_at": now_iso}
             changed = True
-        elif not isinstance((uavs[uav_id] or {}).get("standardized_profile"), dict):
-            uavs[uav_id]["standardized_profile"] = dict(_UAV_REGISTRY_PROFILE_DEFAULTS)  # type: ignore[index]
-            changed = True
-        owner = str((uavs[uav_id] or {}).get("owner_user_id", "user-1"))
-        user_row = users.setdefault(owner, {"uav_ids": [], "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")})
-        if isinstance(user_row, dict):
-            ids = user_row.get("uav_ids") if isinstance(user_row.get("uav_ids"), list) else []
-            if uav_id not in ids:
-                ids.append(uav_id)
-                user_row["uav_ids"] = ids
-                user_row["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            continue
+        raw_ids = row.get("uav_ids")
+        ids = [str(x) for x in raw_ids if str(x).strip()] if isinstance(raw_ids, list) else []
+        filtered: list[str] = []
+        for uav_id in ids:
+            urow = uavs.get(uav_id) if isinstance(uavs.get(uav_id), dict) else None
+            if not isinstance(urow, dict):
                 changed = True
+                continue
+            owner = str(urow.get("owner_user_id", "")).strip()
+            if owner and _normalize_user_id(owner) != norm_owner:
+                changed = True
+                continue
+            if uav_id in filtered:
+                changed = True
+                continue
+            filtered.append(uav_id)
+        if filtered != ids or not isinstance(row.get("uav_ids"), list):
+            row["uav_ids"] = filtered
+            row["updated_at"] = now_iso
+            changed = True
+    for uav_id, row in list(uavs.items()):
+        row_changed = False
+        urow = row if isinstance(row, dict) else {}
+        if not isinstance(row, dict):
+            row_changed = True
+            changed = True
+        if not str(urow.get("operator_license_id", "")).strip():
+            urow["operator_license_id"] = "op-001"
+            row_changed = True
+            changed = True
+        if not isinstance(urow.get("standardized_profile"), dict):
+            urow["standardized_profile"] = dict(_UAV_REGISTRY_PROFILE_DEFAULTS)
+            row_changed = True
+            changed = True
+        if row_changed:
+            urow["updated_at"] = now_iso
+        uavs[uav_id] = urow
     if changed:
         _set_uav_registry({"users": users, "uavs": uavs})
 
@@ -780,6 +1183,9 @@ def _registry_user_summary(user_id: str) -> Dict[str, Any]:
     uav_rows: list[dict] = []
     for uid in uav_ids:
         meta = uavs.get(uid) if isinstance(uavs.get(uid), dict) else {}
+        owner = str(meta.get("owner_user_id", "")).strip() if isinstance(meta, dict) else ""
+        if owner and _normalize_user_id(owner) != user_id:
+            continue
         lic_id = str(meta.get("operator_license_id", "op-001")) if isinstance(meta, dict) else "op-001"
         snap = SIM.fleet_snapshot().get(uid, {})
         profile = _get_uav_registry_profile(uid)
@@ -820,7 +1226,7 @@ def _record_planned_route_history(*, uav_id: str, route_id: str, waypoints: list
             category = "agent_replanned"
         else:
             category = "other"
-    if category == "agent_replanned":
+    if category in {"agent_replanned", "dss_replanned"}:
         # Keep agent replans explicitly tied to the latest user-planned route without mutating user_planned.
         associated_user_row = None
         for row in reversed(rows if isinstance(rows, list) else []):
@@ -836,7 +1242,9 @@ def _record_planned_route_history(*, uav_id: str, route_id: str, waypoints: list
             if not str(meta.get("associated_user_planned_created_at", "")).strip():
                 meta["associated_user_planned_created_at"] = associated_user_row.get("created_at")
             if not str(meta.get("association_type", "")).strip():
-                meta["association_type"] = "derived_from_user_planned"
+                meta["association_type"] = (
+                    "dss_derived_from_user_planned" if category == "dss_replanned" else "derived_from_user_planned"
+                )
     # Keep only the latest path per category for a UAV so mission overlays remain stable and uncluttered.
     rows = [
         r for r in rows
@@ -1041,6 +1449,7 @@ def _save_verified_mission_and_paths(
             "paths": {
                 "user_planned_route_id": None,
                 "agent_replanned_route_id": None,
+                "dss_replanned_route_id": None,
                 "utm_confirmed_route_id": route_id,
             },
         }
@@ -1057,14 +1466,17 @@ def _save_verified_mission_and_paths(
             source_hint=source,
         )
     _stamp_mission_id_on_route_category(uav_id=uav_id, category="agent_replanned", mission_id=str(mission["mission_id"]))
+    _stamp_mission_id_on_route_category(uav_id=uav_id, category="dss_replanned", mission_id=str(mission["mission_id"]))
     # Refresh path route ids after copy/dedupe.
     latest_paths = _latest_mission_paths_for(user_id=user_id, uav_id=uav_id)
     if isinstance(latest_paths, dict):
         user_row = latest_paths.get("user_planned") if isinstance(latest_paths.get("user_planned"), dict) else {}
         agent_row = latest_paths.get("agent_replanned") if isinstance(latest_paths.get("agent_replanned"), dict) else {}
+        dss_row = latest_paths.get("dss_replanned") if isinstance(latest_paths.get("dss_replanned"), dict) else {}
         mission["paths"] = {
             "user_planned_route_id": str(user_row.get("route_id", "") or "") or None,
             "agent_replanned_route_id": str(agent_row.get("route_id", "") or "") or None,
+            "dss_replanned_route_id": str(dss_row.get("route_id", "") or "") or None,
             "utm_confirmed_route_id": route_id,
         }
     common_meta = {"mission_id": mission["mission_id"], "approval_source": source}
@@ -1125,6 +1537,7 @@ def _latest_mission_paths_for(*, user_id: str, uav_id: str) -> Dict[str, Any]:
     planned = _get_planned_route_history().get(uav_id, [])
     user_row: Dict[str, Any] | None = None
     agent_row: Dict[str, Any] | None = None
+    dss_row: Dict[str, Any] | None = None
     if isinstance(planned, list):
         for row in reversed(planned):
             if not isinstance(row, dict):
@@ -1135,7 +1548,9 @@ def _latest_mission_paths_for(*, user_id: str, uav_id: str) -> Dict[str, Any]:
                 user_row = dict(row)
             elif cat == "agent_replanned" and agent_row is None:
                 agent_row = dict(row)
-            if user_row is not None and agent_row is not None:
+            elif cat == "dss_replanned" and dss_row is None:
+                dss_row = dict(row)
+            if user_row is not None and agent_row is not None and dss_row is not None:
                 break
     approved_hist = _get_approved_flight_path_history(UAV_DB, "approved_flight_path_history")
     approved_rows = approved_hist.get(f"{user_id}:{uav_id}", [])
@@ -1148,6 +1563,7 @@ def _latest_mission_paths_for(*, user_id: str, uav_id: str) -> Dict[str, Any]:
     return {
         "user_planned": user_row,
         "agent_replanned": agent_row,
+        "dss_replanned": dss_row,
         "utm_confirmed": utm_row,
     }
 
@@ -1279,6 +1695,7 @@ def _path_records_summary_for(*, user_id: str, uav_id: str) -> Dict[str, Any]:
                 break
     user_row = mission_paths.get("user_planned") if isinstance(mission_paths.get("user_planned"), dict) else None
     agent_row = mission_paths.get("agent_replanned") if isinstance(mission_paths.get("agent_replanned"), dict) else None
+    dss_row = mission_paths.get("dss_replanned") if isinstance(mission_paths.get("dss_replanned"), dict) else None
     utm_row = mission_paths.get("utm_confirmed") if isinstance(mission_paths.get("utm_confirmed"), dict) else None
     uav_utm_route_id = str((utm_row or {}).get("route_id") or "")
     utm_mirror_route_id = str((utm_latest or {}).get("route_id") or "")
@@ -1304,6 +1721,16 @@ def _path_records_summary_for(*, user_id: str, uav_id: str) -> Dict[str, Any]:
             in_uav_db=bool(agent_row),
             in_utm_db=False,
         ),
+        "dss_replanned": _path_record_row_summary(
+            category="dss_replanned",
+            label="DSS Replanned",
+            color="#f04438",
+            user_id=user_id,
+            uav_id=uav_id,
+            row=dss_row,
+            in_uav_db=bool(dss_row),
+            in_utm_db=False,
+        ),
         "utm_confirmed": _path_record_row_summary(
             category="utm_confirmed",
             label="UTM Approved",
@@ -1322,7 +1749,7 @@ def _path_records_summary_for(*, user_id: str, uav_id: str) -> Dict[str, Any]:
     return {
         "scope": {"user_id": user_id, "uav_id": uav_id},
         "rows": rows,
-        "order": ["user_planned", "agent_replanned", "utm_confirmed"],
+        "order": ["user_planned", "agent_replanned", "dss_replanned", "utm_confirmed"],
         "sync": {"uav_db": UAV_DB.get_sync(), "utm_db": UTM_DB_MIRROR.get_sync()},
     }
 
@@ -1410,6 +1837,7 @@ def _uav_data_source_info(uav_id: str) -> Dict[str, Any]:
         "active": str(snap.get("data_source", "absent") or "absent"),
         "meta": snap.get("data_source_meta") if isinstance(snap.get("data_source_meta"), dict) else None,
         "lastUpdateTs": snap.get("last_update_ts"),
+        "controlAdapter": get_uav_control_adapter_status(uav_id=uav_id),
     }
 
 
@@ -1422,10 +1850,148 @@ def _default_time_window() -> tuple[str, str]:
     )
 
 
+def _parse_utc_dt(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _approval_expiry_gate_issue(approval: Dict[str, Any]) -> str | None:
+    expires_at_raw = str(approval.get("expires_at", "") or "").strip()
+    if not expires_at_raw:
+        return "UTM approval expiry not available"
+    expires_at = _parse_utc_dt(expires_at_raw)
+    if not isinstance(expires_at, datetime):
+        return f"UTM approval expiry invalid ({expires_at_raw})"
+    if expires_at <= datetime.now(timezone.utc):
+        iso = expires_at.isoformat().replace("+00:00", "Z")
+        return f"UTM approval expired ({iso})"
+    return None
+
+
+def _extract_dss_ovn(value: Any) -> str:
+    rec = value if isinstance(value, dict) else {}
+    intent = rec.get("intent") if isinstance(rec.get("intent"), dict) else {}
+    return str(intent.get("ovn") or rec.get("ovn") or "").strip()
+
+
+def _latest_local_dss_intent_for_uav(*, user_id: str, uav_id: str, route_id: str) -> Dict[str, Any] | None:
+    intents = _get_local_dss_operational_intents()
+    exact_id = f"{_normalize_user_id(user_id)}:{uav_id}:{route_id}"
+    if isinstance(intents.get(exact_id), dict):
+        return dict(intents[exact_id])
+
+    latest: Dict[str, Any] | None = None
+    latest_ts: datetime | None = None
+    for row in intents.values():
+        if not isinstance(row, dict):
+            continue
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        if str(metadata.get("uav_id", "")).strip() != uav_id:
+            continue
+        meta_user = str(metadata.get("user_id", "")).strip()
+        if meta_user and meta_user != _normalize_user_id(user_id):
+            continue
+        meta_route = str(metadata.get("route_id", "")).strip()
+        if route_id and meta_route and meta_route != route_id:
+            continue
+        row_ts = _parse_utc_dt(row.get("updated_at")) or _parse_utc_dt(metadata.get("lifecycle_updated_at"))
+        if latest is None:
+            latest = dict(row)
+            latest_ts = row_ts
+            continue
+        if isinstance(row_ts, datetime) and (latest_ts is None or row_ts > latest_ts):
+            latest = dict(row)
+            latest_ts = row_ts
+    return latest
+
+
+def _dss_ovn_gate_issue(*, user_id: str, uav_id: str, route_id: str, dss_result: Any) -> str | None:
+    dss_rec = dss_result if isinstance(dss_result, dict) else {}
+    if not dss_rec:
+        return "DSS intent result not available"
+
+    session_intent = dss_rec.get("intent") if isinstance(dss_rec.get("intent"), dict) else {}
+    session_intent_id = str(session_intent.get("intent_id") or dss_rec.get("intent_id") or "").strip()
+    session_ovn = _extract_dss_ovn(dss_rec)
+    if not session_ovn:
+        return "DSS OVN missing in session intent"
+
+    intents = _get_local_dss_operational_intents()
+    local_intent = dict(intents[session_intent_id]) if session_intent_id and isinstance(intents.get(session_intent_id), dict) else None
+    if not isinstance(local_intent, dict):
+        local_intent = _latest_local_dss_intent_for_uav(user_id=user_id, uav_id=uav_id, route_id=route_id)
+    if not isinstance(local_intent, dict):
+        return "DSS local operational intent missing"
+
+    local_intent_id = str(local_intent.get("intent_id") or "").strip()
+    if session_intent_id and local_intent_id and session_intent_id != local_intent_id:
+        return f"DSS intent mismatch (session={session_intent_id}, local={local_intent_id})"
+
+    local_ovn = str(local_intent.get("ovn", "") or "").strip()
+    if not local_ovn:
+        return "DSS OVN missing in local intent"
+    if local_ovn != session_ovn:
+        return f"DSS OVN stale (session={session_ovn}, local={local_ovn})"
+
+    volume4d = local_intent.get("volume4d") if isinstance(local_intent.get("volume4d"), dict) else {}
+    local_end = _parse_utc_dt(volume4d.get("time_end")) or _parse_utc_dt(local_intent.get("time_end"))
+    if isinstance(local_end, datetime) and local_end <= datetime.now(timezone.utc):
+        return f"DSS intent window expired ({local_end.isoformat().replace('+00:00', 'Z')})"
+    return None
+
+
+def _dss_subscription_health(max_stale_minutes: int = 15) -> Dict[str, Any]:
+    subs_raw = UTM_DB_MIRROR.get_state("dss_subscriptions")
+    subs = subs_raw if isinstance(subs_raw, dict) else {}
+    notifications_raw = UTM_DB_MIRROR.get_state("dss_notifications")
+    notifications = notifications_raw if isinstance(notifications_raw, list) else []
+    now = datetime.now(timezone.utc)
+    expired_subscriptions = 0
+    stale_subscriptions = 0
+    for rec in subs.values():
+        if not isinstance(rec, dict):
+            continue
+        expires_at = _parse_utc_dt(rec.get("expires_at"))
+        updated_at = _parse_utc_dt(rec.get("updated_at"))
+        if isinstance(expires_at, datetime) and expires_at < now:
+            expired_subscriptions += 1
+        if isinstance(updated_at, datetime) and (now - updated_at).total_seconds() > float(max(1, int(max_stale_minutes)) * 60):
+            stale_subscriptions += 1
+    pending_count = 0
+    pending_lag_sec_max = 0.0
+    for rec in notifications:
+        if not isinstance(rec, dict) or str(rec.get("status", "")).strip().lower() != "pending":
+            continue
+        pending_count += 1
+        created_at = _parse_utc_dt(rec.get("created_at"))
+        if isinstance(created_at, datetime):
+            pending_lag_sec_max = max(pending_lag_sec_max, max(0.0, (now - created_at).total_seconds()))
+    stale = bool(
+        expired_subscriptions > 0
+        or stale_subscriptions > 0
+        or pending_lag_sec_max > float(max(1, int(max_stale_minutes)) * 60)
+    )
+    return {
+        "subscription_count": len(subs),
+        "expired_subscription_count": expired_subscriptions,
+        "stale_subscription_count": stale_subscriptions,
+        "pending_notification_count": pending_count,
+        "pending_notification_lag_sec_max": round(pending_lag_sec_max, 3),
+        "stale": stale,
+    }
+
+
 def _flight_control_gate_issues(uav_id: str, *, action: str, user_id: Optional[str] = None) -> list[str]:
     snap = SIM.status_if_exists(uav_id)
     if not isinstance(snap, dict):
         return ["UAV not found"]
+    action_l = str(action or "").strip().lower()
     resolved_user_id = _resolve_session_user_id(uav_id=uav_id, user_id=user_id)
     session = _get_uav_utm_session(user_id=resolved_user_id, uav_id=uav_id)
     if isinstance(session.get("utm_approval"), dict):
@@ -1435,62 +2001,110 @@ def _flight_control_gate_issues(uav_id: str, *, action: str, user_id: Optional[s
     if isinstance(session.get("utm_dss_result"), dict):
         snap["utm_dss_result"] = dict(session["utm_dss_result"])
     issues: list[str] = []
-    battery = snap.get("battery_pct")
-    if isinstance(battery, (int, float)) and float(battery) < 15.0:
-        issues.append(f"Battery low ({float(battery):.0f}%)")
-    wps = snap.get("waypoints")
-    if not isinstance(wps, list) or len(wps) < 2:
-        issues.append("Planned path requires at least 2 waypoints")
+    data_source = str(snap.get("data_source", "simulated") or "simulated").strip().lower()
+    # Live/remote telemetry can lag local UTM mirror state; keep tactical controls available.
+    is_remote_state = data_source not in {"", "simulated"}
 
-    geofence = snap.get("utm_geofence_result")
-    if isinstance(geofence, dict):
-        if geofence.get("ok") is not True and geofence.get("geofence_ok") is not True:
-            issues.append("Geofence / NFZ check not passed")
-    else:
-        issues.append("Geofence / NFZ check not available")
+    def _append_dss_blockers(*, include_degraded: bool, include_stale_subscription: bool) -> None:
+        dss_result = snap.get("utm_dss_result")
+        if isinstance(dss_result, dict):
+            if str(dss_result.get("status", "")).strip().lower() == "error" or str(dss_result.get("error", "")).strip():
+                reason = str(dss_result.get("error") or dss_result.get("details") or "unknown_dss_error")
+                issues.append(f"DSS intent publication failed ({reason})")
+            blocking = dss_result.get("blocking_conflicts")
+            conflict_summary = dss_result.get("intent", {}).get("conflict_summary") if isinstance(dss_result.get("intent"), dict) else {}
+            blocking_count = 0
+            if isinstance(blocking, list):
+                blocking_count = len(blocking)
+            elif isinstance(conflict_summary, dict):
+                blocking_count = int(conflict_summary.get("blocking", 0) or 0)
+            if blocking_count > 0:
+                issues.append(f"DSS strategic conflict unresolved ({blocking_count} blocking)")
+            if include_degraded and bool(dss_result.get("degraded")):
+                issues.append("DSS operating in degraded mode")
+        if include_stale_subscription:
+            sub_health = _dss_subscription_health()
+            if bool(sub_health.get("stale")):
+                issues.append(
+                    "DSS subscription state stale "
+                    f"(expired={int(sub_health.get('expired_subscription_count', 0) or 0)}, "
+                    f"pending_lag_s={float(sub_health.get('pending_notification_lag_sec_max', 0.0) or 0.0):.1f})"
+                )
 
-    approval = snap.get("utm_approval")
-    if isinstance(approval, dict):
-        if approval.get("approved") is not True:
-            issues.append("UTM approval not granted")
-        if approval.get("signature_verified") is False:
-            issues.append("UTM approval signature not verified")
-        checks = approval.get("checks") if isinstance(approval.get("checks"), dict) else {}
-        if isinstance(checks, dict):
-            weather = checks.get("weather")
-            if isinstance(weather, dict) and weather.get("ok") is False:
-                issues.append("UTM weather check failed")
-            for label, key in [
-                ("NFZ", "no_fly_zone"),
-                ("Regulations", "regulations"),
-                ("Time window", "time_window"),
-                ("Operator license", "operator_license"),
-            ]:
-                chk = checks.get(key)
-                if isinstance(chk, dict) and chk.get("ok") is False:
-                    issues.append(f"{label} check failed")
-    else:
-        issues.append("UTM approval not available")
-    dss_result = snap.get("utm_dss_result")
-    if isinstance(dss_result, dict):
-        blocking = dss_result.get("blocking_conflicts")
-        conflict_summary = dss_result.get("intent", {}).get("conflict_summary") if isinstance(dss_result.get("intent"), dict) else {}
-        blocking_count = 0
-        if isinstance(blocking, list):
-            blocking_count = len(blocking)
-        elif isinstance(conflict_summary, dict):
-            blocking_count = int(conflict_summary.get("blocking", 0) or 0)
-        if blocking_count > 0:
-            issues.append(f"DSS strategic conflict unresolved ({blocking_count} blocking)")
-    action_l = str(action or "").strip().lower()
+    # Launch is the strict preflight gate (UTM approval + DSS + subscription health).
+    if action_l == "launch":
+        route_id = str(snap.get("route_id", "route-1") or "route-1")
+        battery = snap.get("battery_pct")
+        if isinstance(battery, (int, float)) and float(battery) < 15.0:
+            issues.append(f"Battery low ({float(battery):.0f}%)")
+        wps = snap.get("waypoints")
+        if not isinstance(wps, list) or len(wps) < 2:
+            issues.append("Planned path requires at least 2 waypoints")
+
+        geofence = snap.get("utm_geofence_result")
+        if isinstance(geofence, dict):
+            if geofence.get("ok") is not True and geofence.get("geofence_ok") is not True:
+                issues.append("Geofence / NFZ check not passed")
+        else:
+            issues.append("Geofence / NFZ check not available")
+
+        approval = snap.get("utm_approval")
+        if isinstance(approval, dict):
+            if approval.get("approved") is not True:
+                issues.append("UTM approval not granted")
+            if approval.get("signature_verified") is False:
+                issues.append("UTM approval signature not verified")
+            expiry_issue = _approval_expiry_gate_issue(approval)
+            if expiry_issue:
+                issues.append(expiry_issue)
+            approval_auth = approval.get("authorization") if isinstance(approval.get("authorization"), dict) else {}
+            if isinstance(approval_auth, dict) and approval_auth and approval_auth.get("authorized") is False:
+                issues.append(
+                    "UTM authorization invalid "
+                    f"({str(approval_auth.get('reason') or 'unknown')})"
+                )
+            checks = approval.get("checks") if isinstance(approval.get("checks"), dict) else {}
+            if isinstance(checks, dict):
+                weather = checks.get("weather")
+                if isinstance(weather, dict) and weather.get("ok") is False:
+                    issues.append("UTM weather check failed")
+                for label, key in [
+                    ("NFZ", "no_fly_zone"),
+                    ("Regulations", "regulations"),
+                    ("Time window", "time_window"),
+                    ("Operator license", "operator_license"),
+                ]:
+                    chk = checks.get(key)
+                    if isinstance(chk, dict) and chk.get("ok") is False:
+                        issues.append(f"{label} check failed")
+                license_auth = checks.get("operator_license")
+                license_auth = license_auth.get("authorization") if isinstance(license_auth, dict) else {}
+                if isinstance(license_auth, dict) and license_auth and license_auth.get("authorized") is False:
+                    issues.append(
+                        "Operator authorization check failed "
+                        f"({str(license_auth.get('reason') or 'unknown')})"
+                    )
+        else:
+            issues.append("UTM approval not available")
+        ovn_issue = _dss_ovn_gate_issue(
+            user_id=resolved_user_id,
+            uav_id=uav_id,
+            route_id=route_id,
+            dss_result=snap.get("utm_dss_result"),
+        )
+        if ovn_issue:
+            issues.append(ovn_issue)
+        _append_dss_blockers(include_degraded=True, include_stale_subscription=True)
+    # Resume is strategic re-entry: enforce DSS blockers for simulated mode, but
+    # avoid hard blocks from local mirror drift when UAV state source is live/remote.
+    elif action_l == "resume" and not is_remote_state:
+        _append_dss_blockers(include_degraded=True, include_stale_subscription=False)
     if action_l in {"step", "hold", "resume", "rth", "land"}:
         armed = bool(snap.get("armed"))
         active = bool(snap.get("active"))
         if not armed:
             issues.insert(0, f"Please launch before {action_l}. UAV is not launched.")
             return issues
-        if action_l == "step" and not active:
-            issues.insert(0, "Cannot step while UAV is not active. Please resume mission before step.")
         if action_l == "resume" and active:
             issues.insert(0, "Cannot resume because UAV is already active.")
         if action_l == "hold" and not active:
@@ -1528,17 +2142,14 @@ def _sim_waypoints(uav_id: str) -> tuple[str, list[dict]]:
 
 
 def _geofence_check_from_waypoints(*, uav_id: str, route_id: str, airspace_segment: str, waypoints: list[dict]) -> Dict[str, Any]:
-    bounds = {"sector-A3": {"x": [0, 400], "y": [0, 300], "z": [0, 120]}}
-    seg = bounds.get(airspace_segment, {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0, 120]})
-    out_of_bounds = []
-    for i, wp in enumerate(waypoints):
-        x = float(wp.get("x", 0.0))
-        y = float(wp.get("y", 0.0))
-        z = float(wp.get("z", 0.0))
-        if not (seg["x"][0] <= x <= seg["x"][1] and seg["y"][0] <= y <= seg["y"][1] and seg["z"][0] <= z <= seg["z"][1]):
-            out_of_bounds.append({"index": i, "wp": {"x": x, "y": y, "z": z}})
+    route_bounds = UTM_SERVICE.check_route_bounds(airspace_segment, waypoints)
     nfz = UTM_SERVICE.check_no_fly_zones(waypoints)
-    bounds_ok = len(out_of_bounds) == 0
+    out_of_bounds = route_bounds.get("out_of_bounds") if isinstance(route_bounds.get("out_of_bounds"), list) else []
+    bounds_ok = bool(
+        route_bounds.get("ok") is True
+        or route_bounds.get("geofence_ok") is True
+        or route_bounds.get("bounds_ok") is True
+    )
     return {
         "uav_id": uav_id,
         "route_id": route_id,
@@ -1548,6 +2159,9 @@ def _geofence_check_from_waypoints(*, uav_id: str, route_id: str, airspace_segme
         "geofence_ok": bounds_ok,
         "bounds_ok": bounds_ok,
         "out_of_bounds": out_of_bounds,
+        "bounds": route_bounds.get("bounds"),
+        "matched_airspace": route_bounds.get("matched_airspace"),
+        "source": route_bounds.get("source"),
         "no_fly_zone": nfz,
     }
 
@@ -1832,6 +2446,7 @@ def _run_uav_agent_chat_heuristic(payload: UavAgentChatPayload) -> Dict[str, Any
 
     p = prompt.lower()
     wants_route_opt = any(k in p for k in ["replan", "path", "route", "optimiz"])
+    dss_replan_context = ("dss" in p) and any(k in p for k in ["conflict", "strategic", "block"])
     wants_network = payload.auto_network_optimize or any(k in p for k in ["coverage", "signal", "network", "sinr", "qos", "latency", "power"])
     net_mode = str(payload.network_mode or "").lower().strip()
     if net_mode not in {"coverage", "qos", "power"}:
@@ -1866,7 +2481,15 @@ def _run_uav_agent_chat_heuristic(payload: UavAgentChatPayload) -> Dict[str, Any
                     f"Replanned route ({payload.optimization_profile}) to avoid UTM no-fly zones "
                     f"({n_changes} changes, {n_deleted} waypoint removals)."
                 )
-            tool_trace.append({"tool": "uav_replan_route_via_utm_nfz", "status": "success", "profile": payload.optimization_profile})
+            tool_trace.append(
+                {
+                    "tool": "uav_replan_route_via_utm_nfz",
+                    "status": "success",
+                    "profile": payload.optimization_profile,
+                    "replan_context": "dss_conflict_mitigation" if dss_replan_context else "agent_copilot",
+                    "reason": "dss_strategic_conflict_mitigation" if dss_replan_context else "operator_prompt_replan",
+                }
+            )
         else:
             messages.append("Route replan failed.")
             tool_trace.append({"tool": "uav_replan_route_via_utm_nfz", "status": "error"})
@@ -1987,6 +2610,7 @@ def _run_uav_agent_chat_heuristic(payload: UavAgentChatPayload) -> Dict[str, Any
         "toolTrace": tool_trace,
         "uav": sim_after,
         "replan": replan_result,
+        "replanContext": "dss_conflict_mitigation" if dss_replan_context else "agent_copilot",
         "utmVerify": verify_result,
         "networkOptimization": net_opt_result,
         "networkState": network_state.get("result") if isinstance(network_state, dict) else None,

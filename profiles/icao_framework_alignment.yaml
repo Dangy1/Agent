@@ -1,0 +1,28 @@
+{
+  "profile_id": "icao_framework_alignment",
+  "name": "ICAO UTM Framework Alignment",
+  "version": "2026.1",
+  "effective_date": "2026-01-01",
+  "governance": {
+    "required_approvals": ["safety", "compliance", "airspace_authority_liaison"]
+  },
+  "cyber_controls": [
+    {
+      "control_id": "ICAO-CY-01",
+      "description": "System-level operational and safety evidence is exportable for independent review.",
+      "evidence_ids": ["compliance_export"]
+    }
+  ],
+  "incident_process": {
+    "required_artifacts": ["safety_management_process", "post_incident_review_template"]
+  },
+  "continuity": {
+    "availability_slo_pct": 99.0,
+    "decision_latency_ms_p95": 1000,
+    "recovery_time_objective_min": 120,
+    "degraded_mode_required": true
+  },
+  "software_assurance": {
+    "required_artifacts": ["software_assurance_plan", "verification_report", "release_evidence_index"]
+  }
+}

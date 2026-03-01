@@ -1,0 +1,25 @@
+services:
+  postgis-source:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgis-source
+    image: faa/postgis-source:16-local
+    container_name: faa-postgis-source
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-faa_airspace}
+      POSTGRES_USER: ${POSTGRES_USER:-faa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-faa_change_me}
+    ports:
+      - "${POSTGRES_SOURCE_PORT:-5433}:5432"
+    volumes:
+      - faa_postgis_source_data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+volumes:
+  faa_postgis_source_data:

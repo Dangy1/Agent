@@ -94,6 +94,11 @@ def _summarize_tool_result(result: Any) -> Dict[str, Any]:
     return out
 
 
+def _is_dss_conflict_context(text: str) -> bool:
+    t = str(text or "").strip().lower()
+    return ("dss" in t) and any(k in t for k in ("conflict", "strategic", "blocking"))
+
+
 def _exec_actions(payload: Dict[str, Any], actions: list[Dict[str, Any]]) -> Dict[str, Any]:
     uav_id = str(payload.get("uav_id", "uav-1"))
     airspace_segment = str(payload.get("airspace_segment", "sector-A3"))
@@ -102,10 +107,12 @@ def _exec_actions(payload: Dict[str, Any], actions: list[Dict[str, Any]]) -> Dic
     effective_waypoints = list(payload.get("effective_waypoints") or [])
     optimization_profile = str(payload.get("optimization_profile", "balanced") or "balanced")
     network_mode_hint = str(payload.get("network_mode", "") or "").lower().strip()
+    dss_conflict_prompt = _is_dss_conflict_context(prompt)
 
     messages: List[str] = []
     tool_trace: List[Dict[str, Any]] = []
     replan_result: Dict[str, Any] | None = None
+    replan_context: str | None = None
     verify_result: Dict[str, Any] | None = None
     net_opt_result: Dict[str, Any] | None = None
     chosen_network_mode: str | None = None
@@ -127,12 +134,22 @@ def _exec_actions(payload: Dict[str, Any], actions: list[Dict[str, Any]]) -> Dic
                 "optimization_profile": str(args.get("optimization_profile", optimization_profile) or optimization_profile),
             }
             replan_result = uav_replan_route_via_utm_nfz.invoke(replan_args)
+            replan_reason = str(args.get("reason", "") or "").strip().lower()
+            replan_context_arg = str(args.get("replan_context", "") or "").strip().lower()
+            dss_conflict_replan = (
+                dss_conflict_prompt
+                or ("dss" in replan_reason and ("conflict" in replan_reason or "strategic" in replan_reason))
+                or ("dss" in replan_context_arg and "conflict" in replan_context_arg)
+            )
+            replan_context = "dss_conflict_mitigation" if dss_conflict_replan else "agent_copilot"
             ok = isinstance(replan_result, dict) and replan_result.get("status") == "success"
             tool_trace.append(
                 {
                     "step": idx,
                     "tool": "uav_replan_route_via_utm_nfz",
                     "status": "success" if ok else "error",
+                    "reason": "dss_strategic_conflict_mitigation" if dss_conflict_replan else "operator_prompt_replan",
+                    "replan_context": replan_context,
                     "args": {"optimization_profile": replan_args["optimization_profile"]},
                     "summary": _summarize_tool_result(replan_result),
                 }
@@ -288,6 +305,7 @@ def _exec_actions(payload: Dict[str, Any], actions: list[Dict[str, Any]]) -> Dic
         "messages": messages,
         "toolTrace": tool_trace,
         "replan": replan_result,
+        "replanContext": replan_context,
         "utmVerify": verify_result,
         "networkOptimization": net_opt_result,
         "networkMode": chosen_network_mode,
@@ -401,6 +419,7 @@ def _finalize_node(state: CopilotState) -> CopilotState:
         "toolTrace": execution.get("toolTrace") if isinstance(execution.get("toolTrace"), list) else [],
         "uav": sim_after,
         "replan": execution.get("replan"),
+        "replanContext": execution.get("replanContext"),
         "utmVerify": execution.get("utmVerify"),
         "networkOptimization": execution.get("networkOptimization"),
         "networkState": network_state.get("result") if isinstance(network_state, dict) else None,

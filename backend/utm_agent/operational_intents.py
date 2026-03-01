@@ -178,6 +178,7 @@ def upsert_intent(
     conflict_policy: str = "reject",
     ovn: str | None = None,
     uss_base_url: str | None = None,
+    constraints: Dict[str, Any] | None = None,
     metadata: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     iid = str(intent_id or f"oi-{uuid4().hex[:12]}")
@@ -187,15 +188,19 @@ def upsert_intent(
     if policy not in {"reject", "negotiate", "conditional_approve"}:
         policy = "reject"
 
+    norm_volume4d = normalize_volume4d(volume4d)
     record = {
         "intent_id": iid,
         "manager_uss_id": str(manager_uss_id or (prev.get("manager_uss_id") if prev else "uss-local")),
         "state": _state_value(state if state is not None else (prev.get("state") if prev else "accepted")),
         "priority": _priority_value(priority if priority is not None else (prev.get("priority") if prev else "normal")),
-        "volume4d": normalize_volume4d(volume4d),
+        "volume4d": norm_volume4d,
+        "time_start": str(norm_volume4d.get("time_start") or ""),
+        "time_end": str(norm_volume4d.get("time_end") or ""),
         "ovn": str(ovn or f"ovn-{uuid4().hex[:10]}"),
         "version": version,
         "uss_base_url": str(uss_base_url or (prev.get("uss_base_url") if prev else "") or ""),
+        "constraints": _sanitize_metadata(constraints if constraints is not None else (prev.get("constraints") if prev else {})),
         "metadata": _sanitize_metadata(metadata if metadata is not None else (prev.get("metadata") if prev else {})),
         "updated_at": _now_iso(),
     }
@@ -258,4 +263,3 @@ def query_intents(
         out.append(dict(value))
     out.sort(key=lambda x: str(x.get("updated_at") or ""), reverse=True)
     return out
-

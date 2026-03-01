@@ -1,0 +1,35 @@
+FROM postgres:16-bookworm
+
+ARG POSTGIS_SRC=/src/postgis
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      build-essential \
+      autoconf \
+      automake \
+      libtool \
+      ca-certificates \
+      pkg-config \
+      postgresql-server-dev-16 \
+      libxml2-dev \
+      libgeos-dev \
+      libproj-dev \
+      libjson-c-dev \
+      libprotobuf-c-dev \
+      libgdal-dev \
+      xsltproc \
+      docbook-xsl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR ${POSTGIS_SRC}
+COPY vendor/postgis/ ${POSTGIS_SRC}/
+
+RUN ./autogen.sh \
+    && ./configure \
+         --with-pgconfig=/usr/lib/postgresql/16/bin/pg_config \
+         --without-raster \
+         --without-topology \
+         --without-sfcgal \
+         --without-protobuf \
+    && make -j"$(nproc)" \
+    && make install

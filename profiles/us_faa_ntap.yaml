@@ -1,0 +1,33 @@
+{
+  "profile_id": "us_faa_ntap",
+  "name": "US FAA NTAP",
+  "version": "2026.1",
+  "effective_date": "2026-01-01",
+  "governance": {
+    "required_approvals": ["safety", "security", "compliance", "release_manager"]
+  },
+  "cyber_controls": [
+    {
+      "control_id": "FAA-CY-01",
+      "description": "UTM decision and release records are tamper-evident and auditable.",
+      "evidence_ids": ["compliance_export"]
+    },
+    {
+      "control_id": "FAA-CY-02",
+      "description": "Strategic conflict and mission approval decisions are logged with traceable identifiers.",
+      "evidence_ids": ["dss_upsert_operational_intent", "route_checks"]
+    }
+  ],
+  "incident_process": {
+    "required_artifacts": ["incident_response_plan", "incident_reporting_sop", "authority_contact_matrix"]
+  },
+  "continuity": {
+    "availability_slo_pct": 99.9,
+    "decision_latency_ms_p95": 500,
+    "recovery_time_objective_min": 60,
+    "degraded_mode_required": true
+  },
+  "software_assurance": {
+    "required_artifacts": ["sbom", "release_checklist", "change_log", "test_report"]
+  }
+}

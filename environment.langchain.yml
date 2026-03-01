@@ -1,0 +1,21 @@
+name: langchain
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip>=24
+  - nodejs>=22,<23
+  - npm>=10
+  - curl
+  - jq
+  - make
+  - pip:
+      - -r backend/requirements.txt
+      - anyio>=4.0,<5.0
+      - langchain>=1.0,<2.0
+      - langchain-mcp-adapters>=0.1,<1.0
+      - langchain-ollama>=0.3,<1.0
+      - langgraph>=0.7,<1.0
+      - langgraph-cli[inmem]>=0.2,<1.0
+      - mcp>=1.0,<2.0
+      - python-dotenv>=1.0,<2.0

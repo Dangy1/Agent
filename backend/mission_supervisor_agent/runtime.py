@@ -125,6 +125,7 @@ class MissionRuntimeService:
         state.setdefault("applied_actions", [])
         state.setdefault("decision_log", [])
         state.setdefault("evidence_log", [])
+        state.setdefault("command_bus_log", [])
         state.setdefault("rollback_context", [])
         state.setdefault("approvals", [])
         state.setdefault("pending_approvals", [])

@@ -157,6 +157,13 @@ class HoldPayload(BaseModel):
     reason: str = "operator_request"
 
 
+class MissionActionPayload(BaseModel):
+    user_id: Optional[str] = None
+    uav_id: str = "uav-1"
+    action: str = "photo"  # photo | measure | temperature | inspect | hover
+    note: Optional[str] = None
+
+
 class ReplanPayload(BaseModel):
     user_id: Optional[str] = None
     uav_id: str = "uav-1"
@@ -167,6 +174,8 @@ class ReplanPayload(BaseModel):
     optimization_profile: str = "balanced"
     operator_license_id: Optional[str] = None
     auto_utm_verify: bool = True
+    route_category: str = "agent_replanned"
+    replan_context: str = "general"
 
 
 class PathRecordDeletePayload(BaseModel):
@@ -282,6 +291,38 @@ class UavLiveTelemetryPayload(BaseModel):
     observed_at: Optional[str] = None
 
 
+class UavControlBridgeCommandPayload(BaseModel):
+    uav_id: str = "uav-1"
+    operation: Literal["launch", "step", "hold", "resume", "rth", "land"] = "launch"
+    params: Dict[str, Any] = Field(default_factory=dict)
+    requested_at: Optional[str] = None
+    command_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    caller: Optional[str] = None
+
+
+class UavControlBridgeTelemetryPayload(BaseModel):
+    route_id: Optional[str] = None
+    position: Optional[PositionModel] = None
+    waypoint_index: Optional[int] = None
+    velocity_mps: Optional[float] = None
+    battery_pct: Optional[float] = None
+    flight_phase: Optional[str] = None
+    armed: Optional[bool] = None
+    active: Optional[bool] = None
+    source: str = "mavlink_bridge_stub"
+
+
+class UavControlBridgeResponsePayload(BaseModel):
+    status: Literal["success", "error"] = "success"
+    adapter: Dict[str, Any] = Field(default_factory=dict)
+    command: Dict[str, Any] = Field(default_factory=dict)
+    telemetry: Optional[UavControlBridgeTelemetryPayload] = None
+    result: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+    details: Optional[str] = None
+
+
 
 __all__ = [
     "ApprovalPayload",
@@ -305,6 +346,9 @@ __all__ = [
     "StepPayload",
     "TimeWindowCheckPayload",
     "UavAgentChatPayload",
+    "UavControlBridgeCommandPayload",
+    "UavControlBridgeResponsePayload",
+    "UavControlBridgeTelemetryPayload",
     "UavLiveTelemetryPayload",
     "UavRegistryAssignPayload",
     "UavRegistryProfilePayload",

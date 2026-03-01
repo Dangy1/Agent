@@ -1,0 +1,34 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "authority": "FAA",
+        "published_id": "R-2309",
+        "airspace_type": "RESTRICTED",
+        "valid_from": "2025-11-27",
+        "volume_ordinal": 1,
+        "lower_limit_value": 0,
+        "lower_limit_uom": "FT",
+        "lower_limit_ref": "SFC",
+        "upper_limit_value": 12000,
+        "upper_limit_uom": "FT",
+        "upper_limit_ref": "MSL",
+        "attrs_json": "{\"source\":\"sample\",\"shape\":\"training_box\"}"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-77.20, 38.70],
+            [-76.90, 38.70],
+            [-76.90, 38.95],
+            [-77.20, 38.95],
+            [-77.20, 38.70]
+          ]
+        ]
+      }
+    }
+  ]
+}

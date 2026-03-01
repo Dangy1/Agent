@@ -60,9 +60,10 @@ UAV API writes major state into `AgentDB("uav")`:
 4. `uav_utm_sessions`  
    Per `user_id:uav_id` latest UTM approval + geofence result used for flight control gating.
 5. `planned_route_history`  
-   Latest path records by category (`user_planned`, `agent_replanned`, `utm_confirmed` flow support).
+   Latest path records by category (`user_planned`, `agent_replanned`, `dss_replanned`, `utm_confirmed` flow support).
    - `user_planned` is only changed by explicit user planning actions (`plan`, `create_uav`, `reset_route`).
    - `agent_replanned` is separate and linked to `user_planned` through association metadata (`associated_user_planned_route_id`, timestamps).
+   - `dss_replanned` is used for DSS strategic-conflict mitigation detours and is also linked to `user_planned`.
    - Approval/verify flows do not auto-overwrite `user_planned`.
 6. `mission_records` and approved path history  
    Mission-level approval and execution references.
@@ -74,31 +75,31 @@ UAV API writes major state into `AgentDB("uav")`:
 The normal safe mission flow is:
 
 1. Plan route  
-   `POST /api/uav/sim/plan`
+   `POST /api/uav/sim/plan` or `POST /api/uav/live/plan`
 2. Run UTM mission submission workflow  
-   `POST /api/uav/sim/utm-submit-mission`
+   `POST /api/uav/sim/utm-submit-mission` or `POST /api/uav/live/utm-submit-mission`
 3. Launch  
-   `POST /api/uav/sim/launch`
+   `POST /api/uav/sim/launch` or `POST /api/uav/live/launch`
 4. Execute ticks  
-   `POST /api/uav/sim/step`
+   `POST /api/uav/sim/step` or `POST /api/uav/live/step`
 5. Apply control actions as needed  
-   `hold`, `resume`, `rth`, `land`
+   `hold`, `resume`, `rth`, `land` (also under `/api/uav/live/*`)
 
 ### What `utm-submit-mission` orchestrates
 
-`/api/uav/sim/utm-submit-mission` performs backend-side ordered workflow:
+`/api/uav/sim/utm-submit-mission` (and `/api/uav/live/utm-submit-mission`) performs backend-side ordered workflow:
 
 1. Route checks (`/api/utm/checks/route` logic).
-2. Geofence submit (`/api/uav/sim/geofence-submit`).
+2. Geofence submit (`/api/uav/sim/geofence-submit` or `/api/uav/live/geofence-submit`).
 3. UTM verify from UAV route (`/api/utm/verify-from-uav` logic).
-4. Approval request if verify is approved (`/api/uav/sim/request-approval`).
+4. Approval request if verify is approved (`/api/uav/sim/request-approval` or `/api/uav/live/request-approval`).
 
 This centralizes ordering and keeps session + DB updates on backend.
 
 Mission planner UI rule:
 
 1. If editor source is `user_planned`, `Submit to UTM (Auto)` first saves the user path, then runs UTM workflow.
-2. If editor source is `agent_replanned` or `utm_confirmed`, `Submit to UTM (Auto)` submits current route for UTM processing without overwriting `user_planned`.
+2. If editor source is `agent_replanned`, `dss_replanned`, or `utm_confirmed`, `Submit to UTM (Auto)` submits current route for UTM processing without overwriting `user_planned`.
 
 ### Flight control gate
 
@@ -151,7 +152,7 @@ If LLM planner is unavailable, API falls back to heuristic copilot path.
 
 Important persistence behavior:
 
-1. Copilot writes `agent_replanned` history only when a replan action succeeds.
+1. Copilot writes replan history only when a replan action succeeds (`agent_replanned` by default, `dss_replanned` for DSS-conflict mitigation context).
 2. When copilot `auto_verify` returns UTM verification:
    - session approval/geofence are persisted (`uav_utm_sessions`),
    - simulator UTM state is synchronized from session,
@@ -171,6 +172,7 @@ This endpoint performs route replan with optional automatic UTM re-verify loop:
 Path category behavior in this flow:
 
 1. Replanned routes are persisted under `agent_replanned`.
+   - If `route_category=dss_replanned` (or DSS conflict mitigation context is used), they are persisted under `dss_replanned`.
 2. `user_planned` remains the original user path and is not rewritten by replan verification/approval.
 
 Home waypoint (`HM`) behavior:
@@ -258,14 +260,18 @@ In short:
 
 Main UAV endpoints:
 
-1. `/api/uav/sim/state`
-2. `/api/uav/sim/plan`
-3. `/api/uav/sim/utm-submit-mission`
+1. `/api/uav/sim/state` and `/api/uav/live/state`
+2. `/api/uav/sim/plan` and `/api/uav/live/plan`
+3. `/api/uav/sim/utm-submit-mission` and `/api/uav/live/utm-submit-mission`
 4. `/api/uav/sim/launch`, `/step`, `/hold`, `/resume`, `/rth`, `/land`
-5. `/api/uav/sim/replan-via-utm-nfz`
-6. `/api/uav/agent/chat`
-7. `/api/uav/registry/assign`, `/registry/profile`, `/mission-defaults`
-8. `/api/uav/demo/seed-user-profiles`
+5. `/api/uav/live/launch`, `/step`, `/hold`, `/resume`, `/rth`, `/land`
+6. `/api/uav/sim/replan-via-utm-nfz` and `/api/uav/live/replan-via-utm-nfz`
+7. `/api/uav/agent/chat`
+8. `/api/uav/live/source`, `/api/uav/live/ingest`
+9. `/api/uav/registry/assign`, `/registry/profile`, `/mission-defaults`
+10. `/api/uav/demo/seed-user-profiles`
+11. `/api/uav/live/control-adapter`
+12. `/api/uav/control/_contract`, `/api/uav/control/{operation}`
 
 UTM-facing routes mounted in UAV API:
 
@@ -279,7 +285,35 @@ Network-facing routes mounted in UAV API:
 2. `/api/network/optimize`
 3. `/api/network/mission/tick`
 
-## 10) Operational Notes
+## 10) Control Uplink Adapter
+
+Control commands (`launch`, `step`, `hold`, `resume`, `rth`, `land`) now execute through a pluggable uplink adapter:
+
+1. `sim` (default): current internal simulator path.
+2. `http`: external command bridge for real UAV stacks (MAVLink, DJI, etc. behind bridge).
+3. `auto`: uses `http` for non-simulated data sources when configured, otherwise `sim`.
+
+Environment controls:
+
+1. `UAV_CONTROL_ADAPTER_MODE` = `sim|http|auto|mavlink|dji`
+2. `UAV_CONTROL_HTTP_BASE_URL` (e.g. hardware bridge API)
+3. `UAV_CONTROL_HTTP_PATH_TEMPLATE` (default `/api/uav/control/{op}`)
+4. `UAV_CONTROL_HTTP_TIMEOUT_S`
+5. `UAV_CONTROL_HTTP_AUTH_TOKEN`
+6. `UAV_CONTROL_MIRROR_MODE` = `optimistic|telemetry_only|none`
+7. `UAV_CONTROL_ADAPTER_FALLBACK_TO_SIM` = `1|0`
+
+When `http` mode succeeds, telemetry in the uplink response is ingested into simulator state. If no telemetry is returned and mirror mode is `optimistic`, local state is updated via simulator semantics to preserve existing mission flow.
+
+Bridge contract:
+
+1. `GET /api/uav/control/_contract` returns request/response JSON schema and examples.
+2. `POST /api/uav/control/{operation}` is a sample MAVLink bridge stub endpoint implementing:
+   - request fields: `uav_id`, `operation`, `params`, `requested_at`, `command_id`, `idempotency_key`, `caller`
+   - response fields: `status`, `adapter`, `command`, `telemetry`, `result`, `error`, `details`
+3. Telemetry payload shape is adapter-compatible with `UAV_CONTROL_HTTP_BASE_URL` uplink integration.
+
+## 11) Operational Notes
 
 Default local ports from `run-dev.sh`:
 
@@ -289,3 +323,7 @@ Default local ports from `run-dev.sh`:
 4. LangGraph dev backend (graphs): `2024`
 
 Because UAV API imports both UTM and Network shared services, it can serve a unified mission control surface while still syncing with standalone UTM/Network APIs when configured.
+
+## 12) Future Work
+
+1. Pending deployment-specific wiring: configure real DJI/MAVLink bridge URL profile once production bridge endpoint details are provided.

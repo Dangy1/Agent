@@ -1,0 +1,2 @@
+authority,published_id,feature_name,airspace_type,class_code,designator,controlling_agency,using_agency,status,valid_from,valid_to,attrs_json
+FAA,R-2309,Example Restricted Area,RESTRICTED,,R-2309,ZJX ARTCC,USAF,active,2025-11-27,2025-12-24,"{""source"":""NASR""}"

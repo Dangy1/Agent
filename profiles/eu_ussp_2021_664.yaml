@@ -1,0 +1,33 @@
+{
+  "profile_id": "eu_ussp_2021_664",
+  "name": "EU U-space USSP (Reg. 2021/664)",
+  "version": "2026.1",
+  "effective_date": "2026-01-01",
+  "governance": {
+    "required_approvals": ["safety", "security", "compliance", "operations"]
+  },
+  "cyber_controls": [
+    {
+      "control_id": "EU-CY-01",
+      "description": "Operational intent and subscription exchanges are monitored and auditable.",
+      "evidence_ids": ["dss_upsert_operational_intent", "dss_upsert_subscription"]
+    },
+    {
+      "control_id": "EU-CY-02",
+      "description": "Conformance evidence is generated and retained for oversight.",
+      "evidence_ids": ["dss_run_local_conformance", "compliance_export"]
+    }
+  ],
+  "incident_process": {
+    "required_artifacts": ["occurrence_reporting_process", "service_restoration_process", "authority_notification_sop"]
+  },
+  "continuity": {
+    "availability_slo_pct": 99.5,
+    "decision_latency_ms_p95": 700,
+    "recovery_time_objective_min": 90,
+    "degraded_mode_required": true
+  },
+  "software_assurance": {
+    "required_artifacts": ["configuration_baseline", "release_approval_record", "test_traceability_report"]
+  }
+}

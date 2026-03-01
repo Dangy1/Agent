@@ -1,0 +1,229 @@
+rtm_version: 1
+updated_at: "2026-02-27T13:30:00Z"
+owner: "utm_agent"
+requirements:
+  - id: UTM-DSS-A-001
+    phase: MVP
+    status: implemented
+    requirement: "Operational intent lifecycle APIs support create, query, update, and delete semantics."
+    code_paths:
+      - backend/utm_agent/operational_intents.py
+      - backend/utm_agent/api.py
+    tests:
+      - backend/utm_agent/api.py::run_local_conformance
+    evidence_ids:
+      - dss_upsert_operational_intent
+      - dss_delete_operational_intent
+
+  - id: UTM-DSS-A-002
+    phase: MVP
+    status: implemented
+    requirement: "Subscription CRUD and overlap query semantics are available for DSS-style notifications."
+    code_paths:
+      - backend/utm_agent/subscriptions.py
+      - backend/utm_agent/api.py
+    tests:
+      - backend/utm_agent/api.py::run_local_conformance
+    evidence_ids:
+      - dss_upsert_subscription
+      - dss_delete_subscription
+
+  - id: UTM-DSS-A-003
+    phase: MVP
+    status: implemented
+    requirement: "Strategic conflict checks on 4D overlap enforce deterministic reject/negotiate/conditional_approve behavior."
+    code_paths:
+      - backend/utm_agent/operational_intents.py
+      - backend/uav_agent/api_routes_uav.py
+    tests:
+      - backend/utm_agent/api.py::run_local_conformance
+    evidence_ids:
+      - request_approval_blocked_dss_conflict
+
+  - id: UTM-DSS-A-004
+    phase: MVP
+    status: implemented
+    requirement: "Mission supervisor ingests DSS conflict indicators and can transition to mitigation."
+    code_paths:
+      - backend/mission_supervisor_agent/watchers.py
+      - backend/mission_supervisor_agent/planner.py
+    tests:
+      - backend/test/test_mission_supervisor_planner.py
+      - backend/test/test_mission_supervisor_policy.py
+    evidence_ids:
+      - mission_watchers_ingested
+
+  - id: UTM-DSS-A-005
+    phase: MVP
+    status: partial
+    requirement: "Corridor reservation uses intent leasing semantics compatible with strategic deconfliction."
+    code_paths:
+      - backend/utm_agent/api.py
+      - backend/utm_agent/tools.py
+    tests:
+      - backend/utm_agent/api.py::reserve_corridor
+    evidence_ids:
+      - reserve_corridor
+    notes: "Lease-expiry and renew semantics are not fully implemented."
+
+  - id: UTM-DSS-B-001
+    phase: Pre-Cert
+    status: implemented
+    requirement: "RTM exists and maps requirements to code paths, tests, and evidence IDs."
+    code_paths:
+      - docs/compliance/rtm.yaml
+      - backend/utm_agent/api.py
+    tests:
+      - backend/test/utm_conformance/test_compliance_export.py
+    evidence_ids:
+      - compliance_export
+
+  - id: UTM-DSS-B-002
+    phase: Pre-Cert
+    status: implemented
+    requirement: "Automated conformance scenarios execute consistently and are suitable for CI gating."
+    code_paths:
+      - backend/utm_agent/api.py
+      - backend/utm_agent/tools.py
+    tests:
+      - backend/utm_agent/api.py::run_local_conformance
+    evidence_ids:
+      - dss_run_local_conformance
+    notes: "CI blocking is enforced via backend/test/run_utm_conformance_ci.sh and .github/workflows/utm-conformance.yml."
+
+  - id: UTM-DSS-B-003
+    phase: Pre-Cert
+    status: implemented
+    requirement: "Evidence pipeline uses immutable event IDs and correlation IDs across UTM decisions."
+    code_paths:
+      - backend/agent_db.py
+      - backend/utm_agent/api.py
+      - backend/mission_supervisor_agent/command_bus.py
+      - backend/mission_supervisor_agent/graph.py
+    tests:
+      - backend/test/utm_conformance/test_compliance_export.py
+      - backend/test/utm_conformance/test_command_bus_module.py
+    evidence_ids:
+      - compliance_export
+      - dss_upsert_operational_intent
+      - mission_command_dispatched
+      - mission_command_completed
+
+  - id: UTM-DSS-B-004
+    phase: Pre-Cert
+    status: implemented
+    requirement: "Compliance artifact export endpoint is available for release evidence packaging."
+    code_paths:
+      - backend/utm_agent/api.py
+    tests:
+      - backend/test/utm_conformance/test_compliance_export.py
+    evidence_ids:
+      - compliance_export
+
+  - id: UTM-DSS-B-005
+    phase: Pre-Cert
+    status: implemented
+    requirement: "Service-to-service authentication and authorization are enforced for UTM/DSS APIs."
+    code_paths:
+      - backend/utm_agent/api.py
+      - backend/utm_agent/security_controls.py
+    tests:
+      - backend/test/utm_conformance/test_security_controls_module.py
+    evidence_ids:
+      - security_upsert_service_token
+      - dss_upsert_operational_intent
+
+  - id: UTM-DSS-B-006
+    phase: Pre-Cert
+    status: implemented
+    requirement: "Intent object signature verification is cryptographically validated."
+    code_paths:
+      - backend/utm_agent/service.py
+      - backend/utm_agent/api.py
+      - backend/utm_agent/security_controls.py
+      - backend/utm_agent/dss_gateway.py
+      - backend/uav_agent/api_shared.py
+    tests:
+      - backend/test/utm_conformance/test_intent_signature_validation_api.py
+    evidence_ids:
+      - dss_upsert_operational_intent
+
+  - id: UTM-DSS-B-007
+    phase: Pre-Cert
+    status: implemented
+    requirement: "Key rotation policy and trust-store configuration are implemented."
+    code_paths:
+      - backend/utm_agent/security_controls.py
+      - backend/utm_agent/api.py
+    tests:
+      - backend/test/utm_conformance/test_security_controls_module.py
+    evidence_ids:
+      - security_rotate_signing_key
+      - security_register_peer_key
+
+  - id: UTM-DSS-B-008
+    phase: Pre-Cert
+    status: implemented
+    requirement: "Degraded mode behavior is explicit when DSS peers are unavailable."
+    code_paths:
+      - backend/utm_agent/dss_adapter.py
+      - backend/utm_agent/dss_gateway.py
+      - backend/utm_agent/tools.py
+      - backend/mission_supervisor_agent/policy.py
+    tests:
+      - backend/test/utm_conformance/test_dss_adapter_gate.py
+      - backend/test/utm_conformance/test_dss_gateway_failover.py
+    evidence_ids:
+      - dss_run_local_conformance
+      - dss_upsert_operational_intent
+
+  - id: UTM-DSS-C-001
+    phase: Cert
+    status: implemented
+    requirement: "Jurisdiction profiles are available for FAA NTAP, EU USSP, and ICAO alignment."
+    code_paths:
+      - profiles/us_faa_ntap.yaml
+      - profiles/eu_ussp_2021_664.yaml
+      - profiles/icao_framework_alignment.yaml
+    tests:
+      - backend/test/utm_conformance/test_cert_pack_module.py
+    evidence_ids:
+      - certification_pack_generate
+
+  - id: UTM-DSS-C-002
+    phase: Cert
+    status: implemented
+    requirement: "Machine-generated certification package links claims to evidence."
+    code_paths:
+      - backend/utm_agent/api.py
+    tests:
+      - backend/test/utm_conformance/test_cert_pack_module.py
+      - backend/test/utm_conformance/test_cert_pack_api.py
+    evidence_ids:
+      - certification_pack_generate
+
+  - id: UTM-DSS-C-003
+    phase: Cert
+    status: implemented
+    requirement: "Operational SLOs and incident playbook readiness are evaluated before pilot operations."
+    code_paths:
+      - backend/utm_agent/operations_readiness.py
+      - backend/utm_agent/api.py
+      - docs/operations
+    tests:
+      - backend/test/utm_conformance/test_operations_readiness_api.py
+    evidence_ids:
+      - operations_readiness_evaluate
+
+  - id: UTM-DSS-C-004
+    phase: Cert
+    status: implemented
+    requirement: "Periodic resilience campaigns capture red-team and failure-injection outcomes."
+    code_paths:
+      - backend/utm_agent/resilience_campaigns.py
+      - backend/utm_agent/api.py
+    tests:
+      - backend/test/utm_conformance/test_resilience_campaigns_api.py
+    evidence_ids:
+      - resilience_campaign_start
+      - resilience_campaign_run

@@ -1,16 +1,32 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { MissionSyncMap, type MissionBs, type MissionCoverage, type MissionNfz, type MissionTrack } from "./MissionSyncMap";
 import { bumpSharedRevision, getSharedPageState, patchSharedPageState, subscribeSharedPageState } from "./pageSync";
+import { shouldAutoReplanForDssConflict } from "./missionSubmitFlow";
 
 type UavSimState = {
   uav?: Record<string, unknown>;
+  fleet?: Record<string, Record<string, unknown>>;
+  uav_registry_user?: Record<string, unknown>;
   utm?: {
     weather?: Record<string, unknown>;
     no_fly_zones?: Array<Record<string, unknown>>;
     regulations?: Record<string, unknown>;
     licenses?: Record<string, unknown>;
+    effective_regulations?: Record<string, unknown>;
   };
 };
+
+type UtmStateResult = {
+  weather?: Record<string, unknown>;
+  weatherChecks?: Record<string, unknown>;
+  noFlyZones?: Array<Record<string, unknown>>;
+  regulations?: Record<string, unknown>;
+  regulationProfiles?: Record<string, unknown>;
+  effectiveRegulations?: Record<string, unknown>;
+  licenses?: Record<string, unknown>;
+  dss?: Record<string, unknown>;
+};
+
 type UtmCheckResults = {
   route?: Record<string, unknown>;
   timeWindow?: Record<string, unknown>;
@@ -18,16 +34,8 @@ type UtmCheckResults = {
   verify?: Record<string, unknown>;
   corridor?: Record<string, unknown>;
 };
+
 type UtmSourceInfo = { mode?: string; active?: string; meta?: Record<string, unknown> | null };
-type AgentActionLogItem = {
-  id: number;
-  action: string;
-  entity_id?: unknown;
-  payload?: unknown;
-  result?: unknown;
-  created_at: string;
-  agent: "uav" | "utm";
-};
 
 function isObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null;
@@ -37,32 +45,45 @@ function asRecord(x: unknown): Record<string, unknown> | null {
   return isObject(x) ? x : null;
 }
 
-function chipStyle(active = false): React.CSSProperties {
-  return {
-    borderRadius: 999,
-    border: active ? "1px solid #0f766e" : "1px solid #cfd6e6",
-    background: active ? "#e6fffb" : "#fff",
-    color: "#1f2937",
-    padding: "6px 10px",
-    fontSize: 12,
-    cursor: "pointer",
-  };
+function asArrayRecords(x: unknown): Record<string, unknown>[] {
+  return Array.isArray(x) ? x.filter(isObject).map((r) => ({ ...r })) : [];
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "6px 8px",
-  borderRadius: 8,
-  border: "1px solid #d0d5dd",
-  fontSize: 12,
-};
+function formatApiErrorDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  const rec = asRecord(detail);
+  if (!rec) return String(detail ?? "Request failed");
+  const code = typeof rec.error === "string" ? rec.error : null;
+  const issues = Array.isArray(rec.issues) ? rec.issues.map(String).filter(Boolean) : [];
+  if (issues.length) return `${code ?? "Request failed"}: ${issues.join("; ")}`;
+  try {
+    return JSON.stringify(rec);
+  } catch {
+    return code ?? "Request failed";
+  }
+}
 
-const cardStyle: React.CSSProperties = {
-  background: "#fcfcfd",
-  border: "1px solid #eaecf0",
-  borderRadius: 12,
-  padding: 12,
-};
+function assertApiPayloadOk(data: unknown): void {
+  const root = asRecord(data);
+  if (!root) return;
+  const status = String(root.status ?? "").trim().toLowerCase();
+  if (!status || ["success", "warning", "ok"].includes(status)) return;
+  const nested = asRecord(root.result);
+  const detail = root.detail ?? root.error ?? nested?.detail ?? nested?.error ?? root;
+  throw new Error(formatApiErrorDetail(detail));
+}
+
+function normalizeBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+function utmAuthHeaders(token: string, includeJson = false): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (includeJson) headers["Content-Type"] = "application/json";
+  const trimmed = token.trim();
+  if (trimmed) headers.Authorization = `Bearer ${trimmed}`;
+  return headers;
+}
 
 function isoUtcToLocalInput(iso: string): string {
   const dt = new Date(iso);
@@ -77,15 +98,16 @@ function localInputToIsoUtc(value: string): string | null {
   return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
 }
 
-function normalizeBaseUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
-
-function readSyncRevision(data: unknown): number | null {
-  const root = asRecord(data);
-  const result = asRecord(root?.result);
-  const sync = asRecord(result?.sync ?? root?.sync);
-  return typeof sync?.revision === "number" ? sync.revision : null;
+function chipStyle(active = false): React.CSSProperties {
+  return {
+    borderRadius: 999,
+    border: active ? "1px solid #0f766e" : "1px solid #cfd6e6",
+    background: active ? "#e6fffb" : "#fff",
+    color: "#1f2937",
+    padding: "6px 10px",
+    fontSize: 12,
+    cursor: "pointer",
+  };
 }
 
 function yesNoBadge(ok: unknown): React.ReactNode {
@@ -109,257 +131,346 @@ function yesNoBadge(ok: unknown): React.ReactNode {
   );
 }
 
-function renderUtmDecisionReadable(decisionInput: unknown): React.ReactNode {
+function statusBadge(status: unknown): React.ReactNode {
+  const value = String(status ?? "").trim().toLowerCase();
+  const color =
+    value === "ready"
+      ? { bg: "#ecfdf3", fg: "#027a48", bd: "#abefc6" }
+      : value === "blocked"
+      ? { bg: "#fef3f2", fg: "#b42318", bd: "#fecdca" }
+      : value === "attention"
+      ? { bg: "#fffaeb", fg: "#b54708", bd: "#fedf89" }
+      : { bg: "#f2f4f7", fg: "#475467", bd: "#d0d5dd" };
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        borderRadius: 999,
+        padding: "2px 8px",
+        fontSize: 11,
+        fontWeight: 700,
+        background: color.bg,
+        color: color.fg,
+        border: `1px solid ${color.bd}`,
+      }}
+    >
+      {value ? value.toUpperCase() : "UNKNOWN"}
+    </span>
+  );
+}
+
+function trimValue(value: unknown, max = 28): string {
+  const text = String(value ?? "");
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
+function isLocalUssManager(managerUssId: unknown): boolean {
+  return String(managerUssId ?? "").trim().toLowerCase().startsWith("uss-local");
+}
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "6px 8px",
+  borderRadius: 8,
+  border: "1px solid #d0d5dd",
+  fontSize: 12,
+};
+
+const cardStyle: React.CSSProperties = {
+  background: "#fcfcfd",
+  border: "1px solid #eaecf0",
+  borderRadius: 12,
+  padding: 12,
+};
+
+function decisionPanel(decisionInput: unknown): React.ReactNode {
   const decision = asRecord(decisionInput);
   if (!decision) return null;
-  const reasons = Array.isArray(decision.reasons) ? (decision.reasons as unknown[]).map(String) : [];
-  const messages = Array.isArray(decision.messages) ? (decision.messages as unknown[]).map(String) : [];
-  const suggestions = Array.isArray(decision.suggestions) ? (decision.suggestions as unknown[]).map(String) : [];
-  const nfzSummary = asRecord(decision.nfz_conflict_summary);
-  const wpIds = Array.isArray(nfzSummary?.waypoints) ? (nfzSummary!.waypoints as unknown[]).map(String) : [];
-  const segIds = Array.isArray(nfzSummary?.segments) ? (nfzSummary!.segments as unknown[]).map(String) : [];
-  const status = String(decision.status ?? "-");
+  const status = String(decision.status ?? "-").toLowerCase();
   const approved = status === "approved";
-  const conciseMsg = messages.find((m) => m.trim()) ?? "";
-  const conciseSuggestion = suggestions.find((s) => s.trim()) ?? "";
+  const reasons = Array.isArray(decision.reasons) ? (decision.reasons as unknown[]).map(String).slice(0, 4) : [];
+  const messages = Array.isArray(decision.messages) ? (decision.messages as unknown[]).map(String) : [];
   return (
-    <div style={{ border: `1px solid ${approved ? "#abefc6" : "#fecdca"}`, borderRadius: 8, background: approved ? "#ecfdf3" : "#fef3f2", padding: 8, display: "grid", gap: 6 }}>
+    <div
+      style={{
+        border: `1px solid ${approved ? "#abefc6" : "#fecdca"}`,
+        borderRadius: 8,
+        background: approved ? "#ecfdf3" : "#fef3f2",
+        padding: 8,
+        display: "grid",
+        gap: 6,
+      }}
+    >
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <span style={{
-          display: "inline-block",
-          borderRadius: 999,
-          padding: "2px 8px",
-          fontSize: 11,
-          fontWeight: 700,
-          background: approved ? "#d1fadf" : "#fee4e2",
-          color: approved ? "#027a48" : "#b42318",
-          border: `1px solid ${approved ? "#abefc6" : "#fecdca"}`,
-        }}>
-          {status.toUpperCase()}
+        <span
+          style={{
+            display: "inline-block",
+            borderRadius: 999,
+            padding: "2px 8px",
+            fontSize: 11,
+            fontWeight: 700,
+            background: approved ? "#d1fadf" : "#fee4e2",
+            color: approved ? "#027a48" : "#b42318",
+            border: `1px solid ${approved ? "#abefc6" : "#fecdca"}`,
+          }}
+        >
+          {String(decision.status ?? "-").toUpperCase()}
         </span>
-        {reasons.slice(0, 3).map((r, i) => (
-          <span key={`utm-decision-reason-${i}`} style={{ fontSize: 11, color: "#667085", border: "1px solid #d0d5dd", borderRadius: 999, padding: "2px 8px", background: "#fff" }}>
+        {reasons.map((r, i) => (
+          <span key={`${r}-${i}`} style={{ fontSize: 11, color: "#667085", border: "1px solid #d0d5dd", borderRadius: 999, padding: "2px 8px", background: "#fff" }}>
             {r}
           </span>
         ))}
-        {(wpIds.length || segIds.length) ? (
-          <span style={{ fontSize: 11, color: "#b42318", border: "1px solid #fecdca", borderRadius: 999, padding: "2px 8px", background: "#fff" }}>
-            {wpIds.length ? `WP ${wpIds.join(",")}` : ""}{wpIds.length && segIds.length ? " • " : ""}{segIds.length ? `SEG ${segIds.join(",")}` : ""}
-          </span>
-        ) : null}
       </div>
-      {conciseMsg ? <div style={{ fontSize: 12, color: "#344054" }}>{conciseMsg}</div> : null}
-      {!approved && conciseSuggestion ? <div style={{ fontSize: 11, color: "#b54708" }}>{conciseSuggestion}</div> : null}
+      {messages[0] ? <div style={{ fontSize: 12, color: "#344054" }}>{messages[0]}</div> : null}
     </div>
   );
 }
 
-function summarizeInteraction(item: AgentActionLogItem): string {
-  const result = asRecord(item.result);
-  const payload = asRecord(item.payload);
-  if (item.action.includes("verify")) {
-    const approved = result?.approved;
-    const decision = asRecord(result?.decision);
-    const reasons = Array.isArray(decision?.reasons) ? (decision!.reasons as unknown[]).map(String).join(", ") : "";
-    const routeSource = typeof result?.route_source === "string" ? String(result.route_source) : "";
-    return `verify ${approved === true ? "approved" : approved === false ? "rejected" : "done"}${routeSource ? ` • route=${routeSource}` : ""}${reasons ? ` • ${reasons}` : ""}`;
-  }
-  if (item.action.includes("route_check") || item.action === "route_checks") {
-    const geofence = asRecord(result?.geofence);
-    const geofenceOk = geofence?.geofence_ok;
-    const nfz = asRecord(result?.no_fly_zone);
-    return `route check • route_bounds=${String(geofenceOk)} • nfz=${String(nfz?.ok)}`;
-  }
-  if (item.action.includes("approval")) {
-    const approved = result?.approved ?? asRecord(result?.result)?.approved;
-    return `approval ${approved === true ? "approved" : approved === false ? "rejected" : "updated"}`;
-  }
-  if (item.action.includes("nfz")) {
-    const zoneId = String(asRecord(result?.result)?.zone_id ?? result?.zone_id ?? payload?.zone_id ?? payload?.reason ?? "");
-    return `no-fly-zone update${zoneId ? ` • ${zoneId}` : ""}`;
-  }
-  if (item.action.includes("weather")) {
-    return `weather update/check`;
-  }
-  if (item.action.includes("license")) {
-    const lic = String(payload?.operator_license_id ?? asRecord(result?.result)?.operator_license_id ?? "");
-    return `license ${item.action.includes("check") ? "check" : "update"}${lic ? ` • ${lic}` : ""}`;
-  }
-  if (item.action.includes("corridor")) {
-    return "corridor reservation";
-  }
-  if (item.action === "uav_live_ingest" || item.action === "utm_live_ingest") {
-    return "live data ingested";
-  }
-  return item.action.replaceAll("_", " ");
-}
-
 export function UtmPage() {
   const sharedInit = getSharedPageState();
+
   const [apiBase, setApiBase] = useState(sharedInit.utmApiBase || "http://127.0.0.1:8021");
   const [uavApiBase, setUavApiBase] = useState(sharedInit.uavApiBase || "http://127.0.0.1:8020");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [utmAuthToken, setUtmAuthToken] = useState(sharedInit.utmAuthToken || "local-dev-token");
   const [simUavId, setSimUavId] = useState(sharedInit.uavId || "uav-1");
   const [airspace, setAirspace] = useState(sharedInit.airspace || "sector-A3");
+
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [liveRefresh, setLiveRefresh] = useState(false);
+  const [liveRefreshSec, setLiveRefreshSec] = useState("3");
+  const [missionControlExpanded, setMissionControlExpanded] = useState(false);
+  const [selectedMapUserId, setSelectedMapUserId] = useState("all");
+
+  const [simState, setSimState] = useState<UavSimState | null>(null);
+  const [utmState, setUtmState] = useState<UtmStateResult | null>(null);
+  const [utmSourceInfo, setUtmSourceInfo] = useState<UtmSourceInfo | null>(null);
+  const [layeredStatus, setLayeredStatus] = useState<Record<string, unknown> | null>(null);
+  const [dispatchStatus, setDispatchStatus] = useState<Record<string, unknown> | null>(null);
+  const [dssNotificationRows, setDssNotificationRows] = useState<Record<string, unknown>[]>([]);
+  const [dssNotifExpanded, setDssNotifExpanded] = useState(false);
+  const [dssNotifStatusFilter, setDssNotifStatusFilter] = useState("pending");
+  const [dssNotifTypeFilter, setDssNotifTypeFilter] = useState("all");
+  const [networkMap, setNetworkMap] = useState<{ bs: MissionBs[]; coverage: MissionCoverage[]; tracks: MissionTrack[] }>({ bs: [], coverage: [], tracks: [] });
+
   const [wind, setWind] = useState(8);
   const [visibility, setVisibility] = useState(10);
   const [precip, setPrecip] = useState(0);
   const [storm, setStorm] = useState(false);
   const [weatherCheck, setWeatherCheck] = useState<Record<string, unknown> | null>(null);
-  const [state, setState] = useState<UavSimState | null>(null);
 
   const [licenseId, setLicenseId] = useState("op-001");
   const [licenseClass, setLicenseClass] = useState("VLOS");
   const [licenseUavSizeClass, setLicenseUavSizeClass] = useState("middle");
   const [licenseExpiry, setLicenseExpiry] = useState("2099-01-01T00:00");
   const [licenseActive, setLicenseActive] = useState(true);
+
   const [requiredLicenseClass, setRequiredLicenseClass] = useState("VLOS");
   const [requestedSpeedMps, setRequestedSpeedMps] = useState("12");
   const [plannedStartAt, setPlannedStartAt] = useState("");
   const [plannedEndAt, setPlannedEndAt] = useState("");
   const [utmChecks, setUtmChecks] = useState<UtmCheckResults>({});
-  const [liveRefresh, setLiveRefresh] = useState(false);
-  const [liveRefreshSec, setLiveRefreshSec] = useState("3");
-  const [networkMap, setNetworkMap] = useState<{ bs: MissionBs[]; coverage: MissionCoverage[]; tracks: MissionTrack[] }>({ bs: [], coverage: [], tracks: [] });
+  const [fullSubmitApproved, setFullSubmitApproved] = useState<boolean | null>(null);
+
   const [nfzDraftX, setNfzDraftX] = useState("150");
   const [nfzDraftY, setNfzDraftY] = useState("110");
   const [nfzDraftRadiusM, setNfzDraftRadiusM] = useState("30");
   const [nfzDraftReason, setNfzDraftReason] = useState("operator_defined");
   const [nfzDraftZMin, setNfzDraftZMin] = useState("0");
   const [nfzDraftZMax, setNfzDraftZMax] = useState("120");
-  const [backendRevisions, setBackendRevisions] = useState<{ uav: number; utm: number; network: number }>({ uav: -1, utm: -1, network: -1 });
-  const [utmSourceInfo, setUtmSourceInfo] = useState<UtmSourceInfo | null>(null);
-  const [interactionLog, setInteractionLog] = useState<AgentActionLogItem[]>([]);
-  const [interactionLogClearedAt, setInteractionLogClearedAt] = useState<string | null>(null);
-  const [utmLiveJson, setUtmLiveJson] = useState(
-    JSON.stringify(
-      {
-        source: "ops_utm_feed",
-        source_ref: "utm-prod-bridge",
-        observed_at: "2026-02-24T20:00:00Z",
-        airspace_segment: "sector-A3",
-        weather: { wind_mps: 7, visibility_km: 10, precip_mmph: 0, storm_alert: false },
-        no_fly_zones: [{ zone_id: "nfz-top-live", cx: 150, cy: 110, radius_m: 35, z_min: 0, z_max: 120, reason: "hospital_helipad" }],
-      },
-      null,
-      2,
-    ),
-  );
+
+  const postUtm = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+    const res = await fetch(`${normalizeBaseUrl(apiBase)}${path}`, {
+      method: "POST",
+      headers: utmAuthHeaders(utmAuthToken, true),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !isObject(data)) throw new Error(formatApiErrorDetail(asRecord(data)?.detail ?? asRecord(data)?.error ?? "Request failed"));
+    assertApiPayloadOk(data);
+    return data as Record<string, unknown>;
+  };
+
+  const deleteUtm = async (path: string): Promise<Record<string, unknown>> => {
+    const res = await fetch(`${normalizeBaseUrl(apiBase)}${path}`, {
+      method: "DELETE",
+      headers: utmAuthHeaders(utmAuthToken, false),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !isObject(data)) throw new Error(formatApiErrorDetail(asRecord(data)?.detail ?? asRecord(data)?.error ?? "Request failed"));
+    assertApiPayloadOk(data);
+    return data as Record<string, unknown>;
+  };
+
+  const postUav = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+    const res = await fetch(`${normalizeBaseUrl(uavApiBase)}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !isObject(data)) throw new Error(formatApiErrorDetail(asRecord(data)?.detail ?? asRecord(data)?.error ?? "Request failed"));
+    assertApiPayloadOk(data);
+    return data as Record<string, unknown>;
+  };
 
   const loadAll = async () => {
     setBusy(true);
     setMsg("");
-    try {
-      const simStateQs = new URLSearchParams({ uav_id: simUavId });
-      if (licenseId.trim()) simStateQs.set("operator_license_id", licenseId.trim());
-      const [simRes, wRes, srcRes, uavSyncRes, utmSyncRes] = await Promise.all([
-        fetch(`${normalizeBaseUrl(uavApiBase)}/api/uav/sim/state?${simStateQs.toString()}`),
-        fetch(`${normalizeBaseUrl(apiBase)}/api/utm/weather?airspace_segment=${encodeURIComponent(airspace)}`),
-        fetch(`${normalizeBaseUrl(apiBase)}/api/utm/live/source`),
-        fetch(`${normalizeBaseUrl(uavApiBase)}/api/uav/sync?limit_actions=12`),
-        fetch(`${normalizeBaseUrl(apiBase)}/api/utm/sync?limit_actions=18`),
-      ]);
-      const simData = await simRes.json();
-      const wData = await wRes.json();
-      const srcData = await srcRes.json();
-      const uavSyncData = await uavSyncRes.json();
-      const utmSyncData = await utmSyncRes.json();
-      if (!simRes.ok || !isObject(simData)) throw new Error(String(asRecord(simData)?.detail ?? "Simulator state request failed"));
-      if (!wRes.ok || !isObject(wData)) throw new Error(String(asRecord(wData)?.detail ?? "Weather request failed"));
-      setState(simData as UavSimState);
-      setUtmSourceInfo(asRecord((srcData as Record<string, unknown>)?.result) as UtmSourceInfo | null);
-      const uavRecent = Array.isArray(asRecord(asRecord(uavSyncData)?.result)?.recentActions)
-        ? (asRecord(asRecord(uavSyncData)?.result)?.recentActions as unknown[])
-            .filter(isObject)
-            .map((r) => ({
-              id: Number((r as Record<string, unknown>).id ?? 0),
-              action: String((r as Record<string, unknown>).action ?? ""),
-              entity_id: (r as Record<string, unknown>).entity_id,
-              payload: (r as Record<string, unknown>).payload,
-              result: (r as Record<string, unknown>).result,
-              created_at: String((r as Record<string, unknown>).created_at ?? ""),
-              agent: "uav" as const,
-            }))
-        : [];
-      const utmRecent = Array.isArray(asRecord(asRecord(utmSyncData)?.result)?.recentActions)
-        ? (asRecord(asRecord(utmSyncData)?.result)?.recentActions as unknown[])
-            .filter(isObject)
-            .map((r) => ({
-              id: Number((r as Record<string, unknown>).id ?? 0),
-              action: String((r as Record<string, unknown>).action ?? ""),
-              entity_id: (r as Record<string, unknown>).entity_id,
-              payload: (r as Record<string, unknown>).payload,
-              result: (r as Record<string, unknown>).result,
-              created_at: String((r as Record<string, unknown>).created_at ?? ""),
-              agent: "utm" as const,
-            }))
-        : [];
-      const merged = [...utmRecent, ...uavRecent]
-        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-      const filtered = interactionLogClearedAt
-        ? merged.filter((r) => String(r.created_at) >= interactionLogClearedAt)
-        : merged;
-      setInteractionLog(filtered.slice(0, 24));
-      const result = asRecord((wData as Record<string, unknown>).result);
-      setWeatherCheck(result);
-      const currentWeather = asRecord(result?.weather);
-      if (currentWeather) {
-        if (typeof currentWeather.wind_mps === "number") setWind(currentWeather.wind_mps);
-        if (typeof currentWeather.visibility_km === "number") setVisibility(currentWeather.visibility_km);
-        if (typeof currentWeather.precip_mmph === "number") setPrecip(currentWeather.precip_mmph);
-        if (typeof currentWeather.storm_alert === "boolean") setStorm(currentWeather.storm_alert);
+
+    const shared = getSharedPageState();
+    const authHeaders = utmAuthHeaders(utmAuthToken, false);
+    const simQs = new URLSearchParams({ uav_id: simUavId, operator_license_id: licenseId });
+    const utmStateQs = new URLSearchParams({ airspace_segment: airspace, operator_license_id: licenseId });
+
+    const results = await Promise.allSettled([
+      fetch(`${normalizeBaseUrl(uavApiBase)}/api/uav/live/state?${simQs.toString()}`),
+      fetch(`${normalizeBaseUrl(apiBase)}/api/utm/state?${utmStateQs.toString()}`, { headers: authHeaders }),
+      fetch(`${normalizeBaseUrl(apiBase)}/api/utm/weather?airspace_segment=${encodeURIComponent(airspace)}`, { headers: authHeaders }),
+      fetch(`${normalizeBaseUrl(apiBase)}/api/utm/live/source`, { headers: authHeaders }),
+      fetch(`${normalizeBaseUrl(apiBase)}/api/utm/layers/status?airspace_segment=${encodeURIComponent(airspace)}`, { headers: authHeaders }),
+      fetch(`${normalizeBaseUrl(apiBase)}/api/utm/dss/notifications/dispatch/status`, { headers: authHeaders }),
+      fetch(`${normalizeBaseUrl(apiBase)}/api/utm/dss/notifications?limit=200`, { headers: authHeaders }),
+      fetch(
+        `${normalizeBaseUrl(shared.networkApiBase)}/api/network/mission/state?airspace_segment=${encodeURIComponent(airspace)}&selected_uav_id=${encodeURIComponent(simUavId)}`,
+      ),
+    ]);
+
+    const errs: string[] = [];
+
+    if (results[0].status === "fulfilled") {
+      const res = results[0].value;
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && isObject(data)) {
+        setSimState(data as UavSimState);
+      } else {
+        errs.push("UAV state");
       }
-      const licenses = asRecord((simData as Record<string, unknown>).utm && asRecord((simData as Record<string, unknown>).utm)?.licenses);
-      const lic = licenses ? asRecord(licenses[licenseId]) : null;
-      if (lic) {
-        if (typeof lic.license_class === "string") setLicenseClass(lic.license_class);
-        if (typeof lic.uav_size_class === "string") setLicenseUavSizeClass(lic.uav_size_class);
-        if (typeof lic.active === "boolean") setLicenseActive(lic.active);
-        if (typeof lic.expires_at === "string") {
-          const local = isoUtcToLocalInput(lic.expires_at);
-          if (local) setLicenseExpiry(local);
-        }
-      }
-      setMsg("Loaded UTM state");
-      try {
-        const shared = getSharedPageState();
-        const netRes = await fetch(`${shared.networkApiBase.replace(/\/+$/, "")}/api/network/mission/state?airspace_segment=${encodeURIComponent(airspace)}&selected_uav_id=${encodeURIComponent(simUavId)}`);
-        const netData = await netRes.json();
-        const resultNet = asRecord(asRecord(netData)?.result);
-        const bs = Array.isArray(resultNet?.baseStations)
-          ? (resultNet!.baseStations as unknown[]).filter(isObject).map((b) => ({
-              id: String((b as Record<string, unknown>).id ?? "BS"),
-              x: Number((b as Record<string, unknown>).x ?? 0),
-              y: Number((b as Record<string, unknown>).y ?? 0),
-              status: String((b as Record<string, unknown>).status ?? "online"),
-            }))
-          : [];
-        const coverage = Array.isArray(resultNet?.coverage)
-          ? (resultNet!.coverage as unknown[]).filter(isObject).map((c) => ({
-              bsId: String((c as Record<string, unknown>).bsId ?? ""),
-              radiusM: Number((c as Record<string, unknown>).radiusM ?? 0),
-            }))
-          : [];
-        const tracks = Array.isArray(resultNet?.trackingSnapshots)
-          ? (resultNet!.trackingSnapshots as unknown[]).filter(isObject).map((t) => ({
-              id: String((t as Record<string, unknown>).id ?? "uav"),
-              x: Number((t as Record<string, unknown>).x ?? 0),
-              y: Number((t as Record<string, unknown>).y ?? 0),
-              z: Number((t as Record<string, unknown>).z ?? 0),
-              attachedBsId: String((t as Record<string, unknown>).attachedBsId ?? ""),
-              interferenceRisk: String((t as Record<string, unknown>).interferenceRisk ?? "low") as MissionTrack["interferenceRisk"],
-            }))
-          : [];
-        setNetworkMap({ bs, coverage, tracks });
-      } catch {
-        // optional network overlay
-      }
-    } catch (e) {
-      setMsg(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setBusy(false);
+    } else {
+      errs.push("UAV state");
     }
+
+    if (results[1].status === "fulfilled") {
+      const res = results[1].value;
+      const data = await res.json().catch(() => ({}));
+      const result = asRecord(asRecord(data)?.result);
+      if (res.ok && result) {
+        setUtmState(result as UtmStateResult);
+      } else {
+        errs.push("UTM state");
+      }
+    } else {
+      errs.push("UTM state");
+    }
+
+    if (results[2].status === "fulfilled") {
+      const res = results[2].value;
+      const data = await res.json().catch(() => ({}));
+      const result = asRecord(asRecord(data)?.result);
+      if (res.ok && result) {
+        setWeatherCheck(result);
+        const weather = asRecord(result.weather);
+        if (weather) {
+          if (typeof weather.wind_mps === "number") setWind(weather.wind_mps);
+          if (typeof weather.visibility_km === "number") setVisibility(weather.visibility_km);
+          if (typeof weather.precip_mmph === "number") setPrecip(weather.precip_mmph);
+          if (typeof weather.storm_alert === "boolean") setStorm(weather.storm_alert);
+        }
+      } else {
+        errs.push("Weather");
+      }
+    } else {
+      errs.push("Weather");
+    }
+
+    if (results[3].status === "fulfilled") {
+      const res = results[3].value;
+      const data = await res.json().catch(() => ({}));
+      const result = asRecord(asRecord(data)?.result);
+      if (res.ok) {
+        setUtmSourceInfo((result ?? null) as UtmSourceInfo | null);
+      }
+    }
+
+    if (results[4].status === "fulfilled") {
+      const res = results[4].value;
+      const data = await res.json().catch(() => ({}));
+      const result = asRecord(asRecord(data)?.result);
+      if (res.ok && result) {
+        setLayeredStatus(result);
+      } else {
+        errs.push("Layered status");
+      }
+    } else {
+      errs.push("Layered status");
+    }
+
+    if (results[5].status === "fulfilled") {
+      const res = results[5].value;
+      const data = await res.json().catch(() => ({}));
+      const result = asRecord(asRecord(data)?.result);
+      if (res.ok && result) {
+        setDispatchStatus(result);
+      } else {
+        errs.push("Dispatch status");
+      }
+    } else {
+      errs.push("Dispatch status");
+    }
+
+    if (results[6].status === "fulfilled") {
+      const res = results[6].value;
+      const data = await res.json().catch(() => ({}));
+      const result = asRecord(asRecord(data)?.result);
+      if (res.ok && result) {
+        setDssNotificationRows(asArrayRecords(result.items));
+      } else {
+        errs.push("DSS notifications");
+      }
+    } else {
+      errs.push("DSS notifications");
+    }
+
+    if (results[7].status === "fulfilled") {
+      const res = results[7].value;
+      const data = await res.json().catch(() => ({}));
+      const result = asRecord(asRecord(data)?.result);
+      if (res.ok && result) {
+        const bs: MissionBs[] = asArrayRecords(result.baseStations).map((b) => ({
+          id: String(b.id ?? "BS"),
+          x: Number(b.x ?? 0),
+          y: Number(b.y ?? 0),
+          status: String(b.status ?? "online"),
+        }));
+        const coverage: MissionCoverage[] = asArrayRecords(result.coverage).map((c) => ({
+          bsId: String(c.bsId ?? ""),
+          radiusM: Number(c.radiusM ?? 0),
+        }));
+        const tracks: MissionTrack[] = asArrayRecords(result.trackingSnapshots).map((t) => ({
+          id: String(t.id ?? "uav"),
+          x: Number(t.x ?? 0),
+          y: Number(t.y ?? 0),
+          z: Number(t.z ?? 0),
+          attachedBsId: String(t.attachedBsId ?? ""),
+          interferenceRisk: String(t.interferenceRisk ?? "low") as MissionTrack["interferenceRisk"],
+        }));
+        setNetworkMap({ bs, coverage, tracks });
+      } else {
+        errs.push("Network");
+      }
+    } else {
+      errs.push("Network");
+    }
+
+    if (errs.length > 0) {
+      setMsg(`Partial refresh: ${errs.join(", ")} unavailable`);
+    } else {
+      setMsg("UTM page refreshed");
+    }
+
+    setBusy(false);
   };
 
   useEffect(() => {
@@ -367,14 +478,15 @@ export function UtmPage() {
   }, []);
 
   useEffect(() => {
-    patchSharedPageState({ utmApiBase: apiBase, uavApiBase, uavId: simUavId, airspace });
-  }, [apiBase, uavApiBase, simUavId, airspace]);
+    patchSharedPageState({ utmApiBase: apiBase, uavApiBase, utmAuthToken, uavId: simUavId, airspace });
+  }, [apiBase, uavApiBase, utmAuthToken, simUavId, airspace]);
 
   useEffect(() => {
     let lastRevision = getSharedPageState().revision;
     return subscribeSharedPageState((next) => {
       if (next.utmApiBase && next.utmApiBase !== apiBase) setApiBase(next.utmApiBase);
       if (next.uavApiBase && next.uavApiBase !== uavApiBase) setUavApiBase(next.uavApiBase);
+      if (typeof next.utmAuthToken === "string" && next.utmAuthToken !== utmAuthToken) setUtmAuthToken(next.utmAuthToken);
       if (next.uavId && next.uavId !== simUavId) setSimUavId(next.uavId);
       if (next.airspace && next.airspace !== airspace) setAirspace(next.airspace);
       if (next.revision !== lastRevision) {
@@ -382,7 +494,7 @@ export function UtmPage() {
         void loadAll();
       }
     });
-  }, [apiBase, uavApiBase, simUavId, airspace]);
+  }, [apiBase, uavApiBase, utmAuthToken, simUavId, airspace]);
 
   useEffect(() => {
     if (!liveRefresh) return;
@@ -393,93 +505,23 @@ export function UtmPage() {
     return () => window.clearInterval(id);
   }, [liveRefresh, liveRefreshSec, busy]);
 
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      void (async () => {
-        if (busy) return;
-        try {
-          const shared = getSharedPageState();
-          const [uavRes, utmRes, netRes] = await Promise.all([
-            fetch(`${normalizeBaseUrl(uavApiBase)}/api/uav/sync`),
-            fetch(`${normalizeBaseUrl(apiBase)}/api/utm/sync`),
-            fetch(`${normalizeBaseUrl(shared.networkApiBase)}/api/network/sync`),
-          ]);
-          const [uavData, utmData, netData] = await Promise.all([uavRes.json(), utmRes.json(), netRes.json()]);
-          const next = {
-            uav: readSyncRevision(uavData) ?? backendRevisions.uav,
-            utm: readSyncRevision(utmData) ?? backendRevisions.utm,
-            network: readSyncRevision(netData) ?? backendRevisions.network,
-          };
-          const changed = next.uav !== backendRevisions.uav || next.utm !== backendRevisions.utm || next.network !== backendRevisions.network;
-          if (changed) {
-            setBackendRevisions(next);
-            if (backendRevisions.uav >= 0 || backendRevisions.utm >= 0 || backendRevisions.network >= 0) void loadAll();
-          }
-        } catch {
-          // optional auto-refresh path
-        }
-      })();
-    }, 1500);
-    return () => window.clearInterval(id);
-  }, [busy, apiBase, uavApiBase, backendRevisions, simUavId, airspace, interactionLogClearedAt]);
-
-  const postApi = async (path: string, body: unknown, successMsg: string) => {
-    setBusy(true);
-    setMsg("");
-    try {
-      const res = await fetch(`${normalizeBaseUrl(apiBase)}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(String(asRecord(data)?.detail ?? "Request failed"));
-      setMsg(successMsg);
-      await loadAll();
-      bumpSharedRevision();
-    } catch (e) {
-      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
-      setBusy(false);
-    }
-  };
-
-  const postApiResult = async (path: string, body: unknown): Promise<Record<string, unknown> | null> => {
-    setBusy(true);
-    setMsg("");
-    try {
-      const res = await fetch(`${normalizeBaseUrl(apiBase)}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok || !isObject(data)) throw new Error(String(asRecord(data)?.detail ?? "Request failed"));
-      return data as Record<string, unknown>;
-    } catch (e) {
-      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const postJsonToBase = async (baseUrl: string, path: string, body: unknown) => {
-    const res = await fetch(`${normalizeBaseUrl(baseUrl)}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok || !isObject(data)) throw new Error(String(asRecord(data)?.detail ?? "Request failed"));
-    return data as Record<string, unknown>;
-  };
-
   const saveWeather = async () => {
-    await postApi(
-      "/api/utm/weather",
-      { airspace_segment: airspace, wind_mps: wind, visibility_km: visibility, precip_mmph: precip, storm_alert: storm },
-      "Weather updated",
-    );
+    try {
+      setBusy(true);
+      await postUtm("/api/utm/weather", {
+        airspace_segment: airspace,
+        wind_mps: wind,
+        visibility_km: visibility,
+        precip_mmph: precip,
+        storm_alert: storm,
+      });
+      setMsg("Weather updated");
+      bumpSharedRevision();
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const registerLicense = async () => {
@@ -488,178 +530,396 @@ export function UtmPage() {
       setMsg("Action failed: invalid license expiry");
       return;
     }
-    await postApi(
-      "/api/utm/license",
-      {
+    try {
+      setBusy(true);
+      await postUtm("/api/utm/license", {
         operator_license_id: licenseId,
         license_class: licenseClass,
         uav_size_class: licenseUavSizeClass,
         expires_at: expiresIso ?? "2099-01-01T00:00:00Z",
         active: licenseActive,
-      },
-      "License registered",
-    );
+      });
+      setMsg("License saved");
+      bumpSharedRevision();
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const runCheck = async (path: string, body: unknown, key: keyof UtmCheckResults, successMsg: string) => {
+    try {
+      setBusy(true);
+      const data = await postUtm(path, body);
+      setUtmChecks((prev) => ({ ...prev, [key]: asRecord(data.result) ?? {} }));
+      setMsg(successMsg);
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const runRouteChecks = async () => {
     const speed = Number.parseFloat(requestedSpeedMps);
-    const uavRec = asRecord(state?.uav);
-    const routeWaypoints = Array.isArray(uavRec?.waypoints)
-      ? (uavRec!.waypoints as unknown[]).filter(isObject).map((w) => ({ x: Number((w as Record<string, unknown>).x ?? 0), y: Number((w as Record<string, unknown>).y ?? 0), z: Number((w as Record<string, unknown>).z ?? 0) }))
-      : [];
-    const data = await postApiResult("/api/utm/checks/route", {
-      uav_id: simUavId,
-      airspace_segment: airspace,
-      requested_speed_mps: Number.isFinite(speed) ? speed : 12,
-      operator_license_id: licenseId,
-      route_id: typeof uavRec?.route_id === "string" ? uavRec.route_id : undefined,
-      waypoints: routeWaypoints.length ? routeWaypoints : undefined,
-    });
-    if (!data) return;
-    setUtmChecks((prev) => ({ ...prev, route: asRecord(data.result) ?? {} }));
-    setMsg("Route bounds/NFZ/regulation checks completed");
-    await loadAll();
+    const uav = asRecord(simState?.uav);
+    const routeWaypoints = asArrayRecords(uav?.waypoints).map((w) => ({
+      x: Number(w.x ?? 0),
+      y: Number(w.y ?? 0),
+      z: Number(w.z ?? 0),
+    }));
+    await runCheck(
+      "/api/utm/checks/route",
+      {
+        uav_id: simUavId,
+        airspace_segment: airspace,
+        requested_speed_mps: Number.isFinite(speed) ? speed : 12,
+        operator_license_id: licenseId,
+        route_id: typeof uav?.route_id === "string" ? uav.route_id : undefined,
+        waypoints: routeWaypoints.length ? routeWaypoints : undefined,
+      },
+      "route",
+      "Route checks completed",
+    );
   };
 
   const runTimeWindowCheck = async () => {
-    const data = await postApiResult("/api/utm/checks/time-window", {
-      planned_start_at: localInputToIsoUtc(plannedStartAt),
-      planned_end_at: localInputToIsoUtc(plannedEndAt),
-      operator_license_id: licenseId,
-    });
-    if (!data) return;
-    setUtmChecks((prev) => ({ ...prev, timeWindow: asRecord(data.result) ?? {} }));
-    setMsg("Time-window check completed");
+    await runCheck(
+      "/api/utm/checks/time-window",
+      {
+        planned_start_at: localInputToIsoUtc(plannedStartAt),
+        planned_end_at: localInputToIsoUtc(plannedEndAt),
+        operator_license_id: licenseId,
+      },
+      "timeWindow",
+      "Time-window check completed",
+    );
   };
 
   const runLicenseCheck = async () => {
-    const data = await postApiResult("/api/utm/checks/license", {
-      operator_license_id: licenseId,
-      required_license_class: requiredLicenseClass,
-    });
-    if (!data) return;
-    setUtmChecks((prev) => ({ ...prev, license: asRecord(data.result) ?? {} }));
-    setMsg("License check completed");
+    await runCheck(
+      "/api/utm/checks/license",
+      {
+        operator_license_id: licenseId,
+        required_license_class: requiredLicenseClass,
+      },
+      "license",
+      "License check completed",
+    );
   };
 
   const runVerifyFromUav = async () => {
     const speed = Number.parseFloat(requestedSpeedMps);
-    const uavRec = asRecord(state?.uav);
-    const routeWaypoints = Array.isArray(uavRec?.waypoints)
-      ? (uavRec!.waypoints as unknown[]).filter(isObject).map((w) => ({ x: Number((w as Record<string, unknown>).x ?? 0), y: Number((w as Record<string, unknown>).y ?? 0), z: Number((w as Record<string, unknown>).z ?? 0) }))
-      : [];
-    const data = await postApiResult("/api/utm/verify-from-uav", {
-      uav_id: simUavId,
-      airspace_segment: airspace,
-      operator_license_id: licenseId,
-      required_license_class: requiredLicenseClass,
-      requested_speed_mps: Number.isFinite(speed) ? speed : 12,
-      planned_start_at: localInputToIsoUtc(plannedStartAt),
-      planned_end_at: localInputToIsoUtc(plannedEndAt),
-      route_id: typeof uavRec?.route_id === "string" ? uavRec.route_id : undefined,
-      waypoints: routeWaypoints.length ? routeWaypoints : undefined,
-    });
-    if (!data) return;
-    setUtmChecks((prev) => ({ ...prev, verify: asRecord(data.result) ?? {} }));
-    setMsg("UTM flight-plan verification completed");
-    await loadAll();
+    const uav = asRecord(simState?.uav);
+    const routeWaypoints = asArrayRecords(uav?.waypoints).map((w) => ({
+      x: Number(w.x ?? 0),
+      y: Number(w.y ?? 0),
+      z: Number(w.z ?? 0),
+    }));
+    await runCheck(
+      "/api/utm/verify-from-uav",
+      {
+        uav_id: simUavId,
+        airspace_segment: airspace,
+        operator_license_id: licenseId,
+        required_license_class: requiredLicenseClass,
+        requested_speed_mps: Number.isFinite(speed) ? speed : 12,
+        planned_start_at: localInputToIsoUtc(plannedStartAt),
+        planned_end_at: localInputToIsoUtc(plannedEndAt),
+        route_id: typeof uav?.route_id === "string" ? uav.route_id : undefined,
+        waypoints: routeWaypoints.length ? routeWaypoints : undefined,
+      },
+      "verify",
+      "UTM verification completed",
+    );
+  };
+
+  const runFullSubmitMission = async () => {
+    const speed = Number.parseFloat(requestedSpeedMps);
+    if (!Number.isFinite(speed) || speed <= 0) {
+      setMsg("Action failed: requested speed must be a positive number");
+      return;
+    }
+    const startIso = localInputToIsoUtc(plannedStartAt);
+    const endIso = localInputToIsoUtc(plannedEndAt);
+    if (plannedStartAt && !startIso) {
+      setMsg("Action failed: invalid planned start");
+      return;
+    }
+    if (plannedEndAt && !endIso) {
+      setMsg("Action failed: invalid planned end");
+      return;
+    }
+    try {
+      setBusy(true);
+      const submitPayload = {
+        uav_id: simUavId,
+        airspace_segment: airspace,
+        operator_license_id: licenseId,
+        required_license_class: requiredLicenseClass,
+        requested_speed_mps: speed,
+        planned_start_at: startIso,
+        planned_end_at: endIso,
+      };
+      let data = await postUav("/api/uav/live/utm-submit-mission", submitPayload);
+      let aggregate = asRecord(data.result);
+
+      const dssConflictDetected = shouldAutoReplanForDssConflict(aggregate);
+
+      if (dssConflictDetected) {
+        const replanData = await postUav("/api/uav/live/replan-via-utm-nfz", {
+          uav_id: simUavId,
+          airspace_segment: airspace,
+          operator_license_id: licenseId,
+          optimization_profile: "balanced",
+          auto_utm_verify: true,
+          user_request: "Auto detour replan to resolve DSS strategic conflict before mission launch",
+        });
+        if (String(replanData.status ?? "").trim().toLowerCase() === "success") {
+          data = await postUav("/api/uav/live/utm-submit-mission", submitPayload);
+          aggregate = asRecord(data.result);
+          setMsg("DSS conflict detected: auto detour replan applied and mission submit retried.");
+        } else {
+          setMsg("DSS conflict detected: auto detour replan did not complete.");
+        }
+      }
+
+      const routeWrap = asRecord(aggregate?.route_checks);
+      const verifyWrap = asRecord(aggregate?.verify_from_uav);
+      const routeResult = asRecord(routeWrap?.result);
+      const verifyResult = asRecord(verifyWrap?.result);
+      setUtmChecks((prev) => ({
+        ...prev,
+        route: routeResult ?? prev.route,
+        verify: verifyResult ?? prev.verify,
+      }));
+      const approved = aggregate?.approved === true;
+      setFullSubmitApproved(approved);
+      await loadAll();
+      if (approved) {
+        setMsg("Full mission submit approved (UTM + DSS).");
+      } else {
+        const submitGate = asRecord(aggregate?.submit_gate);
+        if (submitGate?.battery_ok === false) {
+          const gateIssues = Array.isArray(submitGate?.issues) ? (submitGate.issues as unknown[]).map(String).filter(Boolean) : [];
+          setMsg(`Full mission submit blocked by submit gate${gateIssues.length ? `: ${gateIssues.join("; ")}` : " (battery check failed)."}`);
+          return;
+        }
+        const approvalWrap = asRecord(aggregate?.approval_request);
+        const reason = approvalWrap?.reason;
+        setMsg(`Full mission submit completed (not approved${reason ? `: ${String(reason)}` : ""}).`);
+      }
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const runDispatchCycle = async () => {
+    try {
+      setBusy(true);
+      await postUtm("/api/utm/dss/notifications/dispatch", { run_limit: 1 });
+      setMsg("Ran one DSS notification dispatch cycle.");
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const runDssAutoRecover = async () => {
+    try {
+      setBusy(true);
+      const notes: string[] = [];
+
+      if (dispatch?.dispatcher_enabled !== true) {
+        await postUtm("/api/utm/dss/notifications/dispatch/enabled", { enabled: true });
+        notes.push("dispatcher enabled");
+      }
+
+      const badManagers = new Set(ussManagerRows.filter((row) => !row.known || !row.active).map((row) => row.manager));
+      const recoverIntentIds = Array.from(
+        new Set(
+          dssOperationalIntents
+            .filter((intent) => {
+              const iid = String(intent.intent_id ?? "").trim();
+              if (!iid) return false;
+              const metadata = asRecord(intent.metadata);
+              const intentUav = String(metadata?.uav_id ?? "").trim();
+              if (intentUav && intentUav !== simUavId) return false;
+              const manager = String(intent.manager_uss_id ?? "").trim();
+              const conflictSummary = asRecord(intent.conflict_summary);
+              const blocking = Number(conflictSummary?.blocking ?? 0);
+              return blocking > 0 || badManagers.has(manager);
+            })
+            .map((intent) => String(intent.intent_id ?? "").trim())
+            .filter(Boolean),
+        ),
+      );
+
+      let deleted = 0;
+      let deleteFailed = 0;
+      for (const intentId of recoverIntentIds) {
+        try {
+          await deleteUtm(`/api/utm/dss/operational-intents/${encodeURIComponent(intentId)}`);
+          deleted += 1;
+        } catch {
+          deleteFailed += 1;
+        }
+      }
+      if (recoverIntentIds.length > 0) {
+        notes.push(`intents deleted ${deleted}/${recoverIntentIds.length}`);
+      } else {
+        notes.push("no problematic intents for selected UAV");
+      }
+      if (deleteFailed > 0) {
+        notes.push(`delete failed ${deleteFailed}`);
+      }
+
+      await postUtm("/api/utm/dss/notifications/dispatch", { run_limit: 3 });
+      notes.push("dispatch x3");
+
+      await loadAll();
+      setMsg(`DSS auto recover done for ${simUavId}: ${notes.join(", ")}`);
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const ackDssNotification = async (notificationId: string) => {
+    const nid = String(notificationId || "").trim();
+    if (!nid) return;
+    try {
+      setBusy(true);
+      await postUtm(`/api/utm/dss/notifications/${encodeURIComponent(nid)}/ack`, {});
+      setMsg(`Acked DSS notification ${nid}.`);
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const toggleDispatcherEnabled = async () => {
+    const currentEnabled = dispatch?.dispatcher_enabled === true;
+    const nextEnabled = !currentEnabled;
+    try {
+      setBusy(true);
+      await postUtm("/api/utm/dss/notifications/dispatch/enabled", { enabled: nextEnabled });
+      setMsg(`DSS dispatcher ${nextEnabled ? "enabled" : "disabled"}.`);
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const deleteDssIntent = async (intentId: string) => {
+    const iid = String(intentId || "").trim();
+    if (!iid) return;
+    if (!window.confirm(`Delete DSS intent ${iid}?`)) return;
+    try {
+      setBusy(true);
+      await deleteUtm(`/api/utm/dss/operational-intents/${encodeURIComponent(iid)}`);
+      setMsg(`Deleted DSS intent ${iid}`);
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const deleteUssProblemIntents = async (intentIds: string[]) => {
+    const uniqueIds = Array.from(new Set(intentIds.map((v) => String(v || "").trim()).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      setMsg("No problematic USS intents to delete.");
+      return;
+    }
+    if (!window.confirm(`Delete ${uniqueIds.length} problematic USS intent(s)?`)) return;
+    try {
+      setBusy(true);
+      let ok = 0;
+      let fail = 0;
+      for (const iid of uniqueIds) {
+        try {
+          await deleteUtm(`/api/utm/dss/operational-intents/${encodeURIComponent(iid)}`);
+          ok += 1;
+        } catch {
+          fail += 1;
+        }
+      }
+      setMsg(`USS cleanup finished: deleted ${ok}, failed ${fail}.`);
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const reserveCorridor = async () => {
-    const data = await postApiResult("/api/utm/corridor/reserve", { uav_id: simUavId, airspace_segment: airspace });
-    if (!data) return;
-    setUtmChecks((prev) => ({ ...prev, corridor: asRecord(data.result) ?? {} }));
-    setMsg("Corridor reservation simulated");
+    await runCheck(
+      "/api/utm/corridor/reserve",
+      { uav_id: simUavId, airspace_segment: airspace },
+      "corridor",
+      "Corridor reservation completed",
+    );
   };
 
-  const ingestUtmLive = async () => {
-    try {
-      const parsed = JSON.parse(utmLiveJson);
-      if (!isObject(parsed)) throw new Error("JSON payload must be an object");
-      const payload = { ...(parsed as Record<string, unknown>) };
-      if (typeof payload.airspace_segment !== "string" || !String(payload.airspace_segment).trim()) payload.airspace_segment = airspace;
-      await postApi("/api/utm/live/ingest", payload, "UTM live data ingested");
-    } catch (e) {
-      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  const addNoFlyZoneAt = async (point: { x: number; y: number; z?: number }) => {
-    const radius_m = Number.parseFloat(nfzDraftRadiusM);
-    const z_min = Number.parseFloat(nfzDraftZMin);
-    const z_max = Number.parseFloat(nfzDraftZMax);
-    if (!Number.isFinite(radius_m) || radius_m <= 0) {
+  const addNoFlyZoneAt = async (point: { x: number; y: number }) => {
+    const radiusM = Number.parseFloat(nfzDraftRadiusM);
+    const zMin = Number.parseFloat(nfzDraftZMin);
+    const zMax = Number.parseFloat(nfzDraftZMax);
+    if (!Number.isFinite(radiusM) || radiusM <= 0) {
       setMsg("Action failed: NFZ radius must be positive");
       return;
     }
-    if (!Number.isFinite(z_min) || !Number.isFinite(z_max) || z_max < z_min) {
+    if (!Number.isFinite(zMin) || !Number.isFinite(zMax) || zMax < zMin) {
       setMsg("Action failed: NFZ altitude range invalid");
       return;
     }
-    setBusy(true);
-    setMsg("");
     try {
-      const payload = {
+      setBusy(true);
+      await postUtm("/api/utm/nfz", {
         cx: point.x,
         cy: point.y,
-        radius_m,
-        z_min,
-        z_max,
+        radius_m: radiusM,
+        z_min: zMin,
+        z_max: zMax,
         reason: nfzDraftReason.trim() || "operator_defined",
-      };
-      await postJsonToBase(apiBase, "/api/utm/nfz", payload);
-      try {
-        await postJsonToBase(uavApiBase, "/api/utm/nfz", payload);
-      } catch {
-        // keep UTM source of truth even if UAV-side mirror is down
-      }
-      setMsg(`NFZ added at (x ${point.x.toFixed(1)}, y ${point.y.toFixed(1)})`);
+      });
       setNfzDraftX(String(Number(point.x.toFixed(1))));
       setNfzDraftY(String(Number(point.y.toFixed(1))));
+      setMsg(`No-fly zone added at (${point.x.toFixed(1)}, ${point.y.toFixed(1)})`);
       bumpSharedRevision();
       await loadAll();
     } catch (e) {
-      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
       setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
-
-  const addNoFlyZoneByMap = async (point: { x: number; y: number; z?: number }) => addNoFlyZoneAt(point);
 
   const addNoFlyZoneByForm = async () => {
     const x = Number.parseFloat(nfzDraftX);
     const y = Number.parseFloat(nfzDraftY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      setMsg("Action failed: NFZ X/Y center must be valid numbers");
+      setMsg("Action failed: NFZ X/Y must be numbers");
       return;
     }
-    await addNoFlyZoneAt({ x, y, z: Number.parseFloat(nfzDraftZMin) });
+    await addNoFlyZoneAt({ x, y });
   };
 
-  const utm = asRecord(state?.utm);
-  const nfz = Array.isArray(utm?.no_fly_zones) ? (utm?.no_fly_zones as unknown[]).filter(isObject) : [];
-  const regulationProfiles = asRecord(utm?.regulation_profiles ?? utm?.regulationProfiles);
-  const effectiveRegs = asRecord(utm?.effective_regulations ?? utm?.effectiveRegulations);
-  const licenses = asRecord(utm?.licenses) ?? {};
-  const licenseRows = useMemo(() => Object.entries(licenses), [licenses]);
-  const uav = asRecord(state?.uav);
-  const approval = asRecord(uav?.utm_approval);
-  const weatherResultChecks = asRecord(weatherCheck?.checks);
-  const routeCheck = asRecord(utmChecks.route);
-  const routeGeofence = asRecord(routeCheck?.geofence);
-  const routeNfz = asRecord(routeCheck?.no_fly_zone);
-  const routeRegs = asRecord(routeCheck?.regulations);
-  const timeWindowCheck = asRecord(utmChecks.timeWindow);
-  const licenseCheck = asRecord(utmChecks.license);
-  const verifyCheck = asRecord(utmChecks.verify);
-  const corridorCheck = asRecord(utmChecks.corridor);
-  const syncedApproval = verifyCheck ?? approval;
-  const syncedApprovalChecks = asRecord(syncedApproval?.checks);
-  const routePointsForMap = Array.isArray(uav?.waypoints)
-    ? (uav!.waypoints as unknown[]).filter(isObject).map((w) => ({ x: Number((w as Record<string, unknown>).x ?? 0), y: Number((w as Record<string, unknown>).y ?? 0), z: Number((w as Record<string, unknown>).z ?? 0) }))
-    : [];
+  const simUav = asRecord(simState?.uav);
+  const routePointsForMap = asArrayRecords(simUav?.waypoints).map((w) => ({
+    x: Number(w.x ?? 0),
+    y: Number(w.y ?? 0),
+    z: Number(w.z ?? 0),
+  }));
   const plannedPosForMap = routePointsForMap.length > 0 ? routePointsForMap[0] : null;
-  const nfzZonesForMap: MissionNfz[] = nfz.map((z) => ({
+
+  const nfzRaw = asArrayRecords(utmState?.noFlyZones ?? simState?.utm?.no_fly_zones ?? []);
+  const nfzZonesForMap: MissionNfz[] = nfzRaw.map((z) => ({
     zone_id: String(z.zone_id ?? "nfz"),
     cx: Number(z.cx ?? 0),
     cy: Number(z.cy ?? 0),
@@ -668,395 +928,991 @@ export function UtmPage() {
     z_max: Number(z.z_max ?? 120),
     reason: String(z.reason ?? ""),
   }));
-  const interactionLogPanel = (
-    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8, alignContent: "start" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ fontWeight: 700, color: "#101828" }}>UAV ↔ UTM Interaction Log</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 11, color: "#667085" }}>Merged recent actions from `uav` + `utm` backends</div>
-          <button
-            type="button"
-            style={chipStyle(false)}
-            onClick={() => {
-              setInteractionLog([]);
-              setInteractionLogClearedAt(new Date().toISOString());
-              void loadAll();
-            }}
-            disabled={busy}
-          >
-            Clear + Refresh
-          </button>
-        </div>
-      </div>
-      <div style={{ border: "1px solid #eaecf0", borderRadius: 10, background: "#fff", maxHeight: 360, overflow: "auto", display: "grid", gap: 6, padding: 8 }}>
-        {interactionLog.length === 0 ? (
-          <div style={{ fontSize: 12, color: "#667085" }}>No interactions recorded yet. Run `Route`, `Verify`, `Approval`, or use UAV copilot actions.</div>
-        ) : (
-          interactionLog.map((item) => {
-            const resultRec = asRecord(item.result);
-            const decision = asRecord(resultRec?.decision);
-            return (
-              <div key={`${item.agent}-${item.id}-${item.created_at}`} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fcfcfd", padding: 8, display: "grid", gap: 4 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                  <div style={{ fontSize: 11, color: item.agent === "utm" ? "#b54708" : "#155eef", fontWeight: 700 }}>
-                    {item.agent.toUpperCase()} • <code>{item.action}</code>
-                  </div>
-                  <div style={{ fontSize: 10, color: "#667085" }}>{new Date(item.created_at).toLocaleString()}</div>
-                </div>
-                <div style={{ fontSize: 12, color: "#344054" }}>{summarizeInteraction(item)}</div>
-                {item.entity_id != null ? <div style={{ fontSize: 11, color: "#667085" }}>entity: <code>{String(item.entity_id)}</code></div> : null}
-                {decision ? (
-                  <div style={{ fontSize: 11, color: decision.status === "approved" ? "#027a48" : "#b42318" }}>
-                    decision: <b>{String(decision.status ?? "-")}</b>
-                    {Array.isArray(decision.reasons) && (decision.reasons as unknown[]).length > 0 ? ` (${(decision.reasons as unknown[]).map(String).join(", ")})` : ""}
-                  </div>
-                ) : null}
-                <details>
-                  <summary style={{ cursor: "pointer", fontSize: 11, color: "#667085" }}>Payload / Result</summary>
-                  <pre style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11 }}>
-{JSON.stringify({ payload: item.payload, result: item.result }, null, 2)}
-                  </pre>
-                </details>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-  const checksActionsPanel = (
-    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-      <div style={{ fontWeight: 700, color: "#101828" }}>UTM Checks & Actions</div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <button type="button" style={chipStyle(false)} onClick={() => void runRouteChecks()} disabled={busy}>Route</button>
-        <button type="button" style={chipStyle(false)} onClick={() => void runTimeWindowCheck()} disabled={busy}>Time</button>
-        <button type="button" style={chipStyle(false)} onClick={() => void runLicenseCheck()} disabled={busy}>License</button>
-        <button type="button" style={chipStyle(false)} onClick={() => void runVerifyFromUav()} disabled={busy}>Verify</button>
-        <button type="button" style={chipStyle(false)} onClick={() => void reserveCorridor()} disabled={busy}>Corridor</button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
-        {[
-          ["Route bounds", yesNoBadge(routeGeofence?.geofence_ok ?? routeGeofence?.bounds_ok ?? routeGeofence?.ok)],
-          ["Route NFZ", yesNoBadge(routeNfz?.ok)],
-          ["Route regulations", yesNoBadge(routeRegs?.ok)],
-          ["Time window", yesNoBadge(timeWindowCheck?.ok)],
-          ["License", yesNoBadge(licenseCheck?.ok)],
-          ["Verify flight plan", yesNoBadge(verifyCheck?.approved)],
-          ["Corridor reserved", yesNoBadge(corridorCheck?.reserved)],
-        ].map(([label, value]) => (
-          <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
-            <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
-            <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontSize: 11, color: "#667085" }}>
-        Results open in the fixed bottom log panel. Use the selector there to switch between Route / Time / License / Verify / Corridor.
-      </div>
-    </div>
-  );
-  const weatherControlsPanel = (
-    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-      <div style={{ fontWeight: 700, color: "#101828" }}>Weather Controls ({airspace})</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        <label style={{ fontSize: 12 }}>Wind: {wind.toFixed(1)} m/s<input type="range" min={0} max={25} step={0.5} value={wind} onChange={(e) => setWind(Number(e.target.value))} style={{ width: "100%" }} /></label>
-        <label style={{ fontSize: 12 }}>Visibility: {visibility.toFixed(1)} km<input type="range" min={0.5} max={20} step={0.5} value={visibility} onChange={(e) => setVisibility(Number(e.target.value))} style={{ width: "100%" }} /></label>
-        <label style={{ fontSize: 12 }}>Precip: {precip.toFixed(1)} mm/h<input type="range" min={0} max={10} step={0.5} value={precip} onChange={(e) => setPrecip(Number(e.target.value))} style={{ width: "100%" }} /></label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, paddingTop: 18 }}>
-          <input type="checkbox" checked={storm} onChange={(e) => setStorm(e.target.checked)} /> Storm alert
-        </label>
-      </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" style={chipStyle(false)} onClick={() => void saveWeather()} disabled={busy}>Save Weather</button>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
-          <span>Weather {yesNoBadge(weatherCheck?.ok)}</span>
-          <span>Wind {yesNoBadge(weatherResultChecks?.wind_ok)}</span>
-          <span>Vis {yesNoBadge(weatherResultChecks?.visibility_ok)}</span>
-          <span>Precip {yesNoBadge(weatherResultChecks?.precip_ok)}</span>
-          <span>Storm {yesNoBadge(weatherResultChecks?.storm_ok)}</span>
-        </div>
-      </div>
-    </div>
-  );
-  const latestApprovalChecksPanel = (
-    <div style={{ ...cardStyle, padding: 10 }}>
-      <div style={{ fontWeight: 700, color: "#101828", marginBottom: 8 }}>Latest Approval Checks (Synced)</div>
-      {renderUtmDecisionReadable(syncedApproval?.decision)}
-      <div style={{ height: 8 }} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
-        {[
-          ["Approval", yesNoBadge(syncedApproval?.approved)],
-          ["Route bounds", yesNoBadge(asRecord(syncedApprovalChecks?.route_bounds)?.ok ?? asRecord(syncedApprovalChecks?.route_bounds)?.geofence_ok)],
-          ["Weather", yesNoBadge(asRecord(syncedApprovalChecks?.weather)?.ok)],
-          ["No-fly zone", yesNoBadge(asRecord(syncedApprovalChecks?.no_fly_zone)?.ok)],
-          ["Regulation", yesNoBadge(asRecord(syncedApprovalChecks?.regulations)?.ok)],
-          ["Time window", yesNoBadge(asRecord(syncedApprovalChecks?.time_window)?.ok)],
-          ["Operator license", yesNoBadge(asRecord(syncedApprovalChecks?.operator_license)?.ok)],
-        ].map(([label, value]) => (
-          <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
-            <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
-            <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
-          </div>
-        ))}
-        <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4, gridColumn: "span 2" }}>
-          <div style={{ color: "#667085", fontSize: 11 }}>Reason</div>
-          <div style={{ color: "#101828", fontSize: 12, minHeight: 18, overflowWrap: "anywhere" }}>
-            <code>{String(syncedApproval?.reason ?? "-")}</code>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-  const regulationsAddNfzPanel = (
-    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ fontWeight: 700, color: "#101828" }}>Regulations + Add No-Fly Zone</div>
-        <div style={{ fontSize: 11, color: "#667085" }}>Create NFZ by form or use map in the next card</div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1.1fr) repeat(5, minmax(68px, 92px)) auto", gap: 8, alignItems: "end" }}>
-        <label style={{ fontSize: 12 }}>NFZ Reason<input style={{ ...inputStyle, maxWidth: 180 }} value={nfzDraftReason} onChange={(e) => setNfzDraftReason(e.target.value)} /></label>
-        <label style={{ fontSize: 12 }}>Center X<input style={{ ...inputStyle, maxWidth: 82 }} value={nfzDraftX} onChange={(e) => setNfzDraftX(e.target.value)} /></label>
-        <label style={{ fontSize: 12 }}>Center Y<input style={{ ...inputStyle, maxWidth: 82 }} value={nfzDraftY} onChange={(e) => setNfzDraftY(e.target.value)} /></label>
-        <label style={{ fontSize: 12 }}>Radius<input style={{ ...inputStyle, maxWidth: 78 }} value={nfzDraftRadiusM} onChange={(e) => setNfzDraftRadiusM(e.target.value)} /></label>
-        <label style={{ fontSize: 12 }}>Z Min<input style={{ ...inputStyle, maxWidth: 74 }} value={nfzDraftZMin} onChange={(e) => setNfzDraftZMin(e.target.value)} /></label>
-        <label style={{ fontSize: 12 }}>Z Max<input style={{ ...inputStyle, maxWidth: 74 }} value={nfzDraftZMax} onChange={(e) => setNfzDraftZMax(e.target.value)} /></label>
-        <div style={{ display: "flex", alignItems: "end" }}>
-          <button type="button" style={chipStyle(false)} onClick={() => void addNoFlyZoneByForm()} disabled={busy}>Add NFZ</button>
-        </div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 4, fontSize: 12 }}>
-        <div style={{ color: "#667085" }}>Base regulation defaults</div><div>Used as fallback; UAV-specific limits are derived from the selected license size class.</div>
-      </div>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Parameter</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Small UAV</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Middle UAV</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Large UAV</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Effective ({licenseId})</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              ["max_altitude_m", "Max altitude", "m"],
-              ["max_route_span_m", "Max route span", "m"],
-              ["max_wind_mps", "Max wind", "m/s"],
-              ["min_visibility_km", "Min visibility", "km"],
-              ["allow_precip_mmph_max", "Max precip", "mm/h"],
-              ["max_mission_duration_min", "Max mission duration", "min"],
-              ["max_speed_mps", "Max speed", "m/s"],
-            ].map(([key, label, unit]) => {
-              const small = asRecord(regulationProfiles?.small);
-              const middle = asRecord(regulationProfiles?.middle);
-              const large = asRecord(regulationProfiles?.large);
-              const fmt = (r: Record<string, unknown> | null) => (r && r[key] != null ? `${String(r[key])} ${unit}` : "-");
-              return (
-                <tr key={key}>
-                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px", color: "#667085" }}>{label}</td>
-                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{fmt(small)}</td>
-                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{fmt(middle)}</td>
-                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{fmt(large)}</td>
-                  <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px", fontWeight: 700 }}>{fmt(effectiveRegs)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 4, fontSize: 12 }}>
-        <div style={{ color: "#667085" }}>Effective UAV size (license)</div><div>{String(effectiveRegs?.uav_size_class ?? "-")}</div>
-        <div style={{ color: "#667085" }}>License-derived reasoning</div><div>UTM applies weather/route/time limits from the selected operator license's UAV size class to reflect aircraft capability.</div>
-      </div>
-    </div>
-  );
 
-  const noFlyZonesMapPanel = (
-    <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ fontWeight: 700, color: "#101828" }}>No-Fly Zones</div>
-        <div style={{ fontSize: 11, color: "#667085" }}>Shift+click on map to add NFZ center</div>
-      </div>
-      <MissionSyncMap
-        title="UTM Synchronized Map"
-        route={routePointsForMap}
-        plannedPosition={plannedPosForMap}
-        trackedPositions={networkMap.tracks}
-        selectedUavId={simUavId}
-        noFlyZones={nfzZonesForMap}
-        baseStations={networkMap.bs}
-        coverage={networkMap.coverage}
-        clickable
-        onAddNoFlyZoneCenter={(p) => void addNoFlyZoneByMap(p)}
-      />
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Zone</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Center (X, Y)</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Radius</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Altitude</th>
-              <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {nfz.map((z, i) => (
-              <tr key={`${String(z.zone_id ?? "nfz")}-${i}`}>
-                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(z.zone_id ?? "")}</code></td>
-                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>x {String(z.cx ?? "")}, y {String(z.cy ?? "")}</td>
-                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.radius_m ?? "")} m</td>
-                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.z_min ?? "")} - {String(z.z_max ?? "")} m</td>
-                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(z.reason ?? "")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {routeGeofence && Array.isArray(routeGeofence.out_of_bounds) && (routeGeofence.out_of_bounds as unknown[]).length > 0 ? (
-        <div style={{ border: "1px solid #fecdca", borderRadius: 8, background: "#fef3f2", padding: 8, fontSize: 12, color: "#7a271a" }}>
-          Route bounds out-of-range waypoints detected in latest route check. Replan on the UAV page before approval.
-        </div>
-      ) : null}
-      {routeNfz && routeNfz.ok === true ? (
-        <div style={{ border: "1px solid #abefc6", borderRadius: 8, background: "#ecfdf3", padding: 8, fontSize: 12, color: "#027a48" }}>
-          Latest route check indicates the route is currently avoiding all no-fly zones.
-        </div>
-      ) : null}
-    </div>
+  const approval = asRecord(simUav?.utm_approval);
+  const verify = asRecord(utmChecks.verify);
+  const activeApproval = verify ?? approval;
+  const activeApprovalChecks = asRecord(activeApproval?.checks);
+
+  const route = asRecord(utmChecks.route);
+  const routeGeofence = asRecord(route?.geofence);
+  const routeNfz = asRecord(route?.no_fly_zone);
+  const routeRegs = asRecord(route?.regulations);
+  const timeWindow = asRecord(utmChecks.timeWindow);
+  const licenseCheck = asRecord(utmChecks.license);
+  const corridor = asRecord(utmChecks.corridor);
+
+  const weatherResultChecks = asRecord(weatherCheck?.checks);
+
+  const licenses = useMemo(() => {
+    const fromUtm = asRecord(utmState?.licenses);
+    if (fromUtm) return fromUtm;
+    return asRecord(simState?.utm?.licenses) ?? {};
+  }, [utmState, simState]);
+
+  const licenseRows = useMemo(() => Object.entries(licenses), [licenses]);
+
+  const effectiveRegs = asRecord(utmState?.effectiveRegulations ?? simState?.utm?.effective_regulations);
+
+  useEffect(() => {
+    const current = asRecord(licenses[licenseId]);
+    if (!current) return;
+    if (typeof current.license_class === "string") setLicenseClass(current.license_class);
+    if (typeof current.uav_size_class === "string") setLicenseUavSizeClass(current.uav_size_class);
+    if (typeof current.active === "boolean") setLicenseActive(current.active);
+    if (typeof current.expires_at === "string") {
+      const local = isoUtcToLocalInput(current.expires_at);
+      if (local) setLicenseExpiry(local);
+    }
+  }, [licenses, licenseId]);
+
+  const dssSummary = asRecord(utmState?.dss);
+  const layered = asRecord(layeredStatus);
+  const layeredLayers = asRecord(layered?.layers);
+  const layeredUtm = asRecord(layeredLayers?.utm);
+  const layeredUss = asRecord(layeredLayers?.uss);
+  const layeredDss = asRecord(layeredLayers?.dss);
+  const layeredSummary = asRecord(layered?.summary);
+  const layeredUavCards = asArrayRecords(layered?.uav_status_cards);
+  const dispatch = asRecord(dispatchStatus);
+  const dispatchConfig = asRecord(dispatch?.config);
+  const dispatchLast = asRecord(dispatch?.last_cycle);
+  const dispatchCounts = asRecord(dispatch?.counts);
+  const dssOperationalIntents = asArrayRecords(dssSummary?.operationalIntents);
+  const dssSubscriptions = asArrayRecords(dssSummary?.subscriptions);
+  const dssParticipants = asArrayRecords(dssSummary?.participants);
+  const dssNotifications = useMemo(() => dssNotificationRows, [dssNotificationRows]);
+  const dssNotifTypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of dssNotifications) {
+      const eventType = String(row.event_type ?? "").trim().toLowerCase();
+      if (eventType) set.add(eventType);
+    }
+    return Array.from(set).sort();
+  }, [dssNotifications]);
+  const dssNotifStatusCounts = useMemo(() => {
+    const out: Record<string, number> = { pending: 0, delivered: 0, failed: 0, acked: 0 };
+    for (const row of dssNotifications) {
+      const status = String(row.status ?? "").trim().toLowerCase();
+      if (status in out) out[status] += 1;
+    }
+    return out;
+  }, [dssNotifications]);
+  const dssNotificationsFiltered = useMemo(
+    () =>
+      dssNotifications.filter((row) => {
+        const status = String(row.status ?? "").trim().toLowerCase();
+        const eventType = String(row.event_type ?? "").trim().toLowerCase();
+        if (dssNotifStatusFilter !== "all" && status !== dssNotifStatusFilter) return false;
+        if (dssNotifTypeFilter !== "all" && eventType !== dssNotifTypeFilter) return false;
+        return true;
+      }),
+    [dssNotifications, dssNotifStatusFilter, dssNotifTypeFilter],
   );
+  const participantsById = useMemo(() => {
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const row of dssParticipants) {
+      const pid = String(row.participant_id ?? "").trim();
+      if (pid) out[pid] = row;
+    }
+    return out;
+  }, [dssParticipants]);
+  const ussManagerIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const intent of dssOperationalIntents) {
+      const manager = String(intent.manager_uss_id ?? "").trim();
+      if (manager) ids.add(manager);
+    }
+    return Array.from(ids).sort();
+  }, [dssOperationalIntents]);
+  const layeredUnknownManagerIds = useMemo(
+    () => (Array.isArray(layeredUss?.unknown_manager_ids) ? layeredUss.unknown_manager_ids.map((v) => String(v)) : []),
+    [layeredUss],
+  );
+  const ussManagerRows = useMemo(
+    () =>
+      ussManagerIds.map((manager) => {
+        const participant = participantsById[manager];
+        const participantStatus = String(participant?.status ?? "").trim().toLowerCase();
+        const known = Boolean(participant) || isLocalUssManager(manager);
+        const active = Boolean((participant && participantStatus === "active") || isLocalUssManager(manager));
+        const intentCount = dssOperationalIntents.filter((intent) => String(intent.manager_uss_id ?? "").trim() === manager).length;
+        return {
+          manager,
+          known,
+          active,
+          participantStatus: participantStatus || (isLocalUssManager(manager) ? "local" : "unknown"),
+          intentCount,
+        };
+      }),
+    [ussManagerIds, participantsById, dssOperationalIntents],
+  );
+  const ussIntentRows = useMemo(
+    () =>
+      dssOperationalIntents.map((intent) => {
+        const metadata = asRecord(intent.metadata);
+        const conflictSummary = asRecord(intent.conflict_summary);
+        const volume4d = asRecord(intent.volume4d);
+        const manager = String(intent.manager_uss_id ?? "").trim();
+        const participant = participantsById[manager];
+        const participantStatus = String(participant?.status ?? "").trim().toLowerCase();
+        const known = Boolean(participant) || isLocalUssManager(manager);
+        const active = Boolean((participant && participantStatus === "active") || isLocalUssManager(manager));
+        const timeStart = String(volume4d?.time_start ?? intent.time_start ?? "-");
+        const timeEnd = String(volume4d?.time_end ?? intent.time_end ?? "-");
+        return {
+          intentId: String(intent.intent_id ?? ""),
+          uavId: String(metadata?.uav_id ?? "-"),
+          managerUssId: manager || "-",
+          known,
+          active,
+          participantStatus: participantStatus || (isLocalUssManager(manager) ? "local" : "unknown"),
+          state: String(intent.state ?? "-"),
+          priority: String(intent.priority ?? "-"),
+          conflictPolicy: String(intent.conflict_policy ?? "-"),
+          blocking: Number(conflictSummary?.blocking ?? 0),
+          lifecyclePhase: String(metadata?.lifecycle_phase ?? "-"),
+          timeStart,
+          timeEnd,
+          updatedAt: String(intent.updated_at ?? "-"),
+        };
+      }),
+    [dssOperationalIntents, participantsById],
+  );
+  const ussIntentIdsByManager = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const intent of dssOperationalIntents) {
+      const manager = String(intent.manager_uss_id ?? "").trim();
+      const intentId = String(intent.intent_id ?? "").trim();
+      if (!manager || !intentId) continue;
+      if (!out[manager]) out[manager] = [];
+      out[manager].push(intentId);
+    }
+    return out;
+  }, [dssOperationalIntents]);
+  const ussProblemIntentIds = useMemo(() => {
+    const badManagers = new Set(ussManagerRows.filter((row) => !row.known || !row.active).map((row) => row.manager));
+    return Array.from(
+      new Set(
+        dssOperationalIntents
+          .filter((intent) => badManagers.has(String(intent.manager_uss_id ?? "").trim()))
+          .map((intent) => String(intent.intent_id ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+  }, [ussManagerRows, dssOperationalIntents]);
+  const ussLayerReason = useMemo(() => {
+    if (layeredUss?.ok === true) return "USS layer healthy: all seen managers are known/allowed.";
+    const unknownCount = Number(layeredUss?.unknown_manager_count ?? layeredUnknownManagerIds.length ?? 0);
+    if (unknownCount > 0) {
+      return `USS layer failed because ${unknownCount} manager USS ID(s) are not registered participants.`;
+    }
+    return "USS layer failed: manager/participant mapping is not healthy.";
+  }, [layeredUss, layeredUnknownManagerIds]);
+  const fleetMap = asRecord(simState?.fleet) ?? {};
+  const fleetUavIds = Object.keys(fleetMap).sort();
+  const registryUserSummary = asRecord(simState?.uav_registry_user);
+  const registry = asRecord(registryUserSummary?.registry);
+  const registryUsers = asRecord(registry?.users) ?? {};
+  const registryUavs = asRecord(registry?.uavs) ?? {};
+  const userIds = Object.keys(registryUsers).sort();
+  const selectedUserRow = asRecord((registryUsers as Record<string, unknown>)[selectedMapUserId]);
+  const selectedUserUavIds = (
+    selectedMapUserId === "all"
+      ? fleetUavIds
+      : (
+          Array.isArray(selectedUserRow?.uav_ids)
+            ? selectedUserRow.uav_ids.map((id) => String(id)).filter(Boolean)
+            : []
+        )
+  ).filter((id) => fleetUavIds.includes(id));
+  const mapSelectableUavIds = selectedUserUavIds.length > 0 ? selectedUserUavIds : fleetUavIds;
+  const mapUavOptions = useMemo(() => {
+    const base = mapSelectableUavIds.slice();
+    if (simUavId && !base.includes(simUavId)) return [simUavId, ...base];
+    if (!base.length && simUavId) return [simUavId];
+    return base;
+  }, [mapSelectableUavIds, simUavId]);
+  const mapTrackIdSet = new Set(mapSelectableUavIds);
+  const mapTracks =
+    selectedMapUserId === "all"
+      ? networkMap.tracks
+      : networkMap.tracks.filter((track) => mapTrackIdSet.has(track.id));
+  const layeredFleetCountRaw = Number(layeredSummary?.fleet_count);
+  const totalUavCount =
+    Number.isFinite(layeredFleetCountRaw) && layeredFleetCountRaw > 0
+      ? Math.trunc(layeredFleetCountRaw)
+      : (Object.keys(registryUavs).length || fleetUavIds.length);
+  const totalUserCount = userIds.length;
+  const layeredUavCardsForScope = useMemo(
+    () => layeredUavCards.filter((card) => selectedMapUserId === "all" || mapTrackIdSet.has(String(card.uav_id))),
+    [layeredUavCards, selectedMapUserId, mapTrackIdSet],
+  );
+  const missionScopeUavIds = mapSelectableUavIds;
+  const fleetIdsFromLayeredScope = new Set(layeredUavCardsForScope.map((card) => String(card.uav_id ?? "")).filter(Boolean));
+  const missionOnlyFleetIds = missionScopeUavIds.filter((id) => !fleetIdsFromLayeredScope.has(id));
+
+  useEffect(() => {
+    if (dssNotifTypeFilter !== "all" && !dssNotifTypeOptions.includes(dssNotifTypeFilter)) {
+      setDssNotifTypeFilter("all");
+    }
+  }, [dssNotifTypeFilter, dssNotifTypeOptions]);
+
+  useEffect(() => {
+    if (selectedMapUserId !== "all" && !userIds.includes(selectedMapUserId)) {
+      setSelectedMapUserId("all");
+    }
+  }, [selectedMapUserId, userIds]);
+
+  useEffect(() => {
+    if (!simUavId && mapSelectableUavIds.length > 0) {
+      setSimUavId(mapSelectableUavIds[0]);
+    }
+  }, [mapSelectableUavIds, simUavId]);
 
   return (
     <div style={{ display: "grid", gap: 12, padding: 14, maxWidth: 1280, margin: "0 auto" }}>
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)", alignItems: "start" }}>
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr)", alignItems: "start" }}>
         <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
-        <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-          <div style={{ fontWeight: 700, color: "#101828" }}>UTM Agent Console</div>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8 }}>
-            <label style={{ fontSize: 12 }}>UTM API URL<input style={{ ...inputStyle, maxWidth: 260 }} value={apiBase} onChange={(e) => setApiBase(e.target.value)} /></label>
-            <label style={{ fontSize: 12 }}>UAV API URL<input style={{ ...inputStyle, maxWidth: 260 }} value={uavApiBase} onChange={(e) => setUavApiBase(e.target.value)} /></label>
-            <label style={{ fontSize: 12 }}>Inspect UAV ID<input style={inputStyle} value={simUavId} onChange={(e) => setSimUavId(e.target.value)} /></label>
-            <label style={{ fontSize: 12 }}>Airspace<input style={inputStyle} value={airspace} onChange={(e) => setAirspace(e.target.value)} /></label>
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828" }}>Layered Runtime (UTM / USS / DSS)</div>
+              <div style={{ fontSize: 11, color: "#667085" }}>Updated: <code>{String(layered?.generated_at ?? "-")}</code></div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
+              {[
+                {
+                  label: "UTM Layer",
+                  ok: layeredUtm?.ok,
+                  detail: `${String(layeredUtm?.approved_uav_count ?? "-")} approved / ${String(layeredUtm?.fleet_count ?? "-")} fleet`,
+                },
+                {
+                  label: "USS Layer",
+                  ok: layeredUss?.ok,
+                  detail: `${String(layeredUss?.active_participant_count ?? "-")} active / ${String(layeredUss?.participant_count ?? "-")} participants`,
+                },
+                {
+                  label: "DSS Layer",
+                  ok: layeredDss?.ok,
+                  detail: `${String(layeredDss?.intent_count ?? "-")} intents / ${String(layeredDss?.pending_notification_count ?? "-")} pending`,
+                },
+              ].map((row) => (
+                <div key={row.label} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "8px 10px", display: "grid", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>{row.label}</div>
+                    <div>{yesNoBadge(row.ok)}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#101828", fontWeight: 700 }}>{row.detail}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>
+              {[
+                ["Ready", layeredSummary?.uav_ready_count],
+                ["Attention", layeredSummary?.uav_attention_count],
+                ["Blocked", layeredSummary?.uav_blocked_count],
+                ["Pending", layeredSummary?.uav_pending_count],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 11, color: "#667085" }}>{String(label)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#101828" }}>{value == null ? "-" : String(value)}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
+              {[
+                ["Users", totalUserCount],
+                ["Total UAVs", totalUavCount],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 11, color: "#667085" }}>{String(label)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#101828" }}>{String(value)}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#667085" }}>
+              DSS snapshot: intents {String(dssSummary?.operationalIntentCount ?? "-")}, subscriptions {String(dssSummary?.subscriptionCount ?? "-")}, participants {String(dssSummary?.participantCount ?? "-")}, pending {String(dssSummary?.pendingNotificationCount ?? "-")}.
+            </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "auto auto auto 1fr", gap: 8, alignItems: "center" }}>
-            <button type="button" style={chipStyle(false)} onClick={() => void loadAll()} disabled={busy}>Refresh UTM State</button>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "0 4px" }}>
-              <input type="checkbox" checked={liveRefresh} onChange={(e) => setLiveRefresh(e.target.checked)} />
-              Live refresh
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-              every
-              <input style={{ ...inputStyle, width: 60 }} value={liveRefreshSec} onChange={(e) => setLiveRefreshSec(e.target.value)} inputMode="numeric" />
-              s
-            </label>
-            <div style={{ fontSize: 12, textAlign: "right", color: msg.toLowerCase().includes("failed") ? "#b42318" : "#475467" }}>{msg || ""}</div>
-          </div>
-          <div style={{ border: "1px solid #eaecf0", borderRadius: 10, background: "#fff", padding: 8, display: "grid", gap: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ fontWeight: 700, color: "#101828", fontSize: 12 }}>Live UTM Data Source + Ingest</div>
-              <div style={{ fontSize: 11, color: "#667085" }}>
-                source:
-                <span style={{ marginLeft: 6, fontWeight: 700, color: String(utmSourceInfo?.active ?? "").includes("sim") ? "#667085" : "#027a48" }}>
-                  {String(utmSourceInfo?.active ?? "unknown")}
-                </span>
-                <span style={{ marginLeft: 6 }}>mode={String(utmSourceInfo?.mode ?? "-")}</span>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828" }}>Select User and Target UAV</div>
+              <div style={{ fontSize: 11, color: "#667085" }}>Filter: <code>{selectedMapUserId}</code></div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1fr) minmax(190px, 1fr) auto", gap: 8, alignItems: "end" }}>
+              <label style={{ fontSize: 12 }}>Select User
+                <select style={inputStyle} value={selectedMapUserId} onChange={(e) => setSelectedMapUserId(e.target.value)}>
+                  <option value="all">All users</option>
+                  {userIds.map((uid) => (
+                    <option key={uid} value={uid}>{uid}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ fontSize: 12 }}>Target UAV
+                <select style={inputStyle} value={simUavId} onChange={(e) => setSimUavId(e.target.value)}>
+                  {(mapUavOptions.length > 0 ? mapUavOptions : [simUavId]).map((uid) => (
+                    <option key={uid} value={uid}>{uid}</option>
+                  ))}
+                </select>
+              </label>
+              <div style={{ fontSize: 11, color: "#667085", paddingBottom: 8 }}>
+                Showing {String(mapTracks.length)} tracks on map
               </div>
             </div>
-            {isObject(utmSourceInfo?.meta) ? (
+            <div style={{ borderTop: "1px solid #eaecf0", paddingTop: 8, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ fontSize: 11, color: "#667085" }}>
-                {String(asRecord(utmSourceInfo?.meta)?.source ?? "-")} • observed {String(asRecord(utmSourceInfo?.meta)?.observed_at ?? "-")}
+                Layered fleet {Number.isFinite(layeredFleetCountRaw) ? Math.trunc(layeredFleetCountRaw) : "N/A"} • Scope mission UAVs {missionScopeUavIds.length} • Scope layered cards {layeredUavCardsForScope.length}
+              </div>
+            </div>
+            {missionOnlyFleetIds.length > 0 ? (
+              <div style={{ fontSize: 11, color: "#b54708" }}>
+                UAVs present in mission fleet but missing from layered cards: <code>{missionOnlyFleetIds.join(", ")}</code>
               </div>
             ) : null}
-            <textarea
-              style={{ ...inputStyle, minHeight: 96, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11 }}
-              value={utmLiveJson}
-              onChange={(e) => setUtmLiveJson(e.target.value)}
-              spellCheck={false}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ fontSize: 11, color: "#667085" }}>Ingested UTM weather/NFZ/regulations are plotted on the UTM map below.</div>
-              <button type="button" style={chipStyle(false)} onClick={() => void ingestUtmLive()} disabled={busy}>Ingest Live UTM</button>
-            </div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>
-            <label style={{ fontSize: 12 }}>Required License Class
-              <select style={inputStyle} value={requiredLicenseClass} onChange={(e) => setRequiredLicenseClass(e.target.value)}>
-                <option value="VLOS">VLOS</option>
-                <option value="BVLOS">BVLOS</option>
-              </select>
-            </label>
-            <label style={{ fontSize: 12 }}>Requested Speed (m/s)<input style={inputStyle} value={requestedSpeedMps} onChange={(e) => setRequestedSpeedMps(e.target.value)} /></label>
-            <label style={{ fontSize: 12 }}>Planned Start<input type="datetime-local" style={inputStyle} value={plannedStartAt} onChange={(e) => setPlannedStartAt(e.target.value)} /></label>
-            <label style={{ fontSize: 12 }}>Planned End<input type="datetime-local" style={inputStyle} value={plannedEndAt} onChange={(e) => setPlannedEndAt(e.target.value)} /></label>
-          </div>
-        </div>
-        {regulationsAddNfzPanel}
-        {noFlyZonesMapPanel}
-        </div>
-        <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
-          {checksActionsPanel}
-          {weatherControlsPanel}
-          {latestApprovalChecksPanel}
-          {interactionLogPanel}
-
-          <div style={{ ...cardStyle, padding: 10, display: "grid", gap: 8 }}>
-            <div style={{ fontWeight: 700, color: "#101828" }}>Operator License Registry</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.9fr 0.9fr 1.1fr auto", gap: 8, alignItems: "end" }}>
-              <label style={{ fontSize: 12 }}>License ID<input style={inputStyle} value={licenseId} onChange={(e) => setLicenseId(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>License Class
-                <select style={inputStyle} value={licenseClass} onChange={(e) => setLicenseClass(e.target.value)}>
-                  <option value="VLOS">VLOS</option>
-                  <option value="BVLOS">BVLOS</option>
-                </select>
-              </label>
-              <label style={{ fontSize: 12 }}>UAV Size
-                <select style={inputStyle} value={licenseUavSizeClass} onChange={(e) => setLicenseUavSizeClass(e.target.value)}>
-                  <option value="small">Small</option>
-                  <option value="middle">Middle</option>
-                  <option value="large">Large</option>
-                </select>
-              </label>
-              <label style={{ fontSize: 12 }}>Expiry<input type="datetime-local" style={inputStyle} value={licenseExpiry} onChange={(e) => setLicenseExpiry(e.target.value)} /></label>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 8 }}>
-                <input type="checkbox" checked={licenseActive} onChange={(e) => setLicenseActive(e.target.checked)} />
-                Active
-              </label>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" style={chipStyle(false)} onClick={() => void registerLicense()} disabled={busy}>Register / Update</button>
-            </div>
-            <div style={{ overflowX: "auto", maxHeight: 180 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <div style={{ overflowX: "auto", maxHeight: 260 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                 <thead>
                   <tr>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>ID</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Class</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>UAV Size</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Expiry</th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Active</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>UAV</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Overall</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>UTM Approval</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Geofence</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>USS</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>DSS Intent</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>DSS State</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Issues</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {licenseRows.map(([id, rec]) => {
-                    const r = asRecord(rec);
-                    return (
-                      <tr key={id}>
-                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{id}</code></td>
-                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(r?.license_class ?? "")}</td>
-                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(r?.uav_size_class ?? "middle")}</td>
-                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(r?.expires_at ?? "")}</code></td>
-                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{yesNoBadge(r?.active)}</td>
-                      </tr>
-                    );
-                  })}
+                  {layeredUavCardsForScope.length === 0 ? (
+                    <tr><td colSpan={8} style={{ padding: "8px 4px", color: "#667085" }}>No layered UAV cards from backend yet.</td></tr>
+                  ) : (
+                    layeredUavCardsForScope.map((card, idx) => {
+                      const uavId = String(card.uav_id ?? "");
+                      const overall = String(card.overall_status ?? "pending");
+                      const utmLayer = asRecord(card.utm_layer);
+                      const ussLayer = asRecord(card.uss_layer);
+                      const dssLayer = asRecord(card.dss_layer);
+                      const issues = Array.isArray(card.issues) ? card.issues.map(String).filter(Boolean).slice(0, 4).join(", ") : "";
+                      const selected = uavId === simUavId;
+                      return (
+                        <tr key={`fleet-layer-${uavId || idx}`}>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px", fontWeight: selected ? 700 : 500, color: selected ? "#155eef" : "#101828" }}>
+                            <code>{uavId || "N/A"}</code>{selected ? " (selected)" : ""}
+                          </td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{statusBadge(overall)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{yesNoBadge(utmLayer?.approval_granted)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{yesNoBadge(utmLayer?.geofence_ok)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(ussLayer?.manager_uss_id ?? "N/A")}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(dssLayer?.intent_id ?? "N/A")}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(dssLayer?.intent_state ?? "N/A")}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px", color: "#667085" }}>{issues || "none"}</td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828" }}>UTM Map + No-Fly Zones</div>
+              <div style={{ fontSize: 11, color: "#667085" }}>Shift+click map to add NFZ center</div>
+            </div>
+            <MissionSyncMap
+              title="Select User and Target UAV Map"
+              route={routePointsForMap}
+              plannedPosition={plannedPosForMap}
+              trackedPositions={mapTracks}
+              selectedUavId={simUavId}
+              noFlyZones={nfzZonesForMap}
+              baseStations={networkMap.bs}
+              coverage={networkMap.coverage}
+              clickable
+              onAddNoFlyZoneCenter={(p) => void addNoFlyZoneAt({ x: p.x, y: p.y })}
+            />
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.1fr) repeat(5, minmax(64px, 90px)) auto", gap: 8, alignItems: "end" }}>
+              <label style={{ fontSize: 12 }}>Reason<input style={inputStyle} value={nfzDraftReason} onChange={(e) => setNfzDraftReason(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>X<input style={inputStyle} value={nfzDraftX} onChange={(e) => setNfzDraftX(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>Y<input style={inputStyle} value={nfzDraftY} onChange={(e) => setNfzDraftY(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>R(m)<input style={inputStyle} value={nfzDraftRadiusM} onChange={(e) => setNfzDraftRadiusM(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>Zmin<input style={inputStyle} value={nfzDraftZMin} onChange={(e) => setNfzDraftZMin(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>Zmax<input style={inputStyle} value={nfzDraftZMax} onChange={(e) => setNfzDraftZMax(e.target.value)} /></label>
+              <button type="button" style={chipStyle(false)} onClick={() => void addNoFlyZoneByForm()} disabled={busy}>Add NFZ</button>
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 700, color: "#101828" }}>Weather Controls</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <label style={{ fontSize: 12 }}>Wind: {wind.toFixed(1)} m/s<input type="range" min={0} max={25} step={0.5} value={wind} onChange={(e) => setWind(Number(e.target.value))} style={{ width: "100%" }} /></label>
+              <label style={{ fontSize: 12 }}>Visibility: {visibility.toFixed(1)} km<input type="range" min={0.5} max={20} step={0.5} value={visibility} onChange={(e) => setVisibility(Number(e.target.value))} style={{ width: "100%" }} /></label>
+              <label style={{ fontSize: 12 }}>Precip: {precip.toFixed(1)} mm/h<input type="range" min={0} max={10} step={0.5} value={precip} onChange={(e) => setPrecip(Number(e.target.value))} style={{ width: "100%" }} /></label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, paddingTop: 18 }}>
+                <input type="checkbox" checked={storm} onChange={(e) => setStorm(e.target.checked)} /> Storm alert
+              </label>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <button type="button" style={chipStyle(false)} onClick={() => void saveWeather()} disabled={busy}>Save Weather</button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11 }}>
+                <span>Weather {yesNoBadge(weatherCheck?.ok)}</span>
+                <span>Wind {yesNoBadge(weatherResultChecks?.wind_ok)}</span>
+                <span>Vis {yesNoBadge(weatherResultChecks?.visibility_ok)}</span>
+                <span>Precip {yesNoBadge(weatherResultChecks?.precip_ok)}</span>
+                <span>Storm {yesNoBadge(weatherResultChecks?.storm_ok)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828" }}>Mission Control (UTM Console + UAV Submit)</div>
+              <button type="button" style={chipStyle(false)} onClick={() => setMissionControlExpanded((v) => !v)}>
+                {missionControlExpanded ? "Collapse" : "Expand"}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: msg.toLowerCase().includes("failed") ? "#b42318" : "#667085" }}>
+              {msg || "Collapsed to save page space."}
+            </div>
+            {missionControlExpanded ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8 }}>
+                  <label style={{ fontSize: 12 }}>UTM API URL<input style={inputStyle} value={apiBase} onChange={(e) => setApiBase(e.target.value)} /></label>
+                  <label style={{ fontSize: 12 }}>UAV API URL<input style={inputStyle} value={uavApiBase} onChange={(e) => setUavApiBase(e.target.value)} /></label>
+                  <label style={{ fontSize: 12 }}>UTM Bearer Token<input style={inputStyle} value={utmAuthToken} onChange={(e) => setUtmAuthToken(e.target.value)} /></label>
+                  <label style={{ fontSize: 12 }}>UAV ID<input style={inputStyle} value={simUavId} onChange={(e) => setSimUavId(e.target.value)} /></label>
+                  <label style={{ fontSize: 12 }}>Airspace<input style={inputStyle} value={airspace} onChange={(e) => setAirspace(e.target.value)} /></label>
+                  <div style={{ fontSize: 11, color: "#667085", alignSelf: "end" }}>
+                    Source: <strong>{String(utmSourceInfo?.active ?? "-")}</strong> ({String(utmSourceInfo?.mode ?? "-")})
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button type="button" style={chipStyle(false)} onClick={() => void loadAll()} disabled={busy}>Refresh</button>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                    <input type="checkbox" checked={liveRefresh} onChange={(e) => setLiveRefresh(e.target.checked)} />
+                    Live refresh
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                    every
+                    <input style={{ ...inputStyle, width: 60 }} value={liveRefreshSec} onChange={(e) => setLiveRefreshSec(e.target.value)} inputMode="numeric" />
+                    s
+                  </label>
+                </div>
+                <div style={{ borderTop: "1px solid #eaecf0", paddingTop: 8, display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>
+                    <label style={{ fontSize: 12 }}>Required License Class
+                      <select style={inputStyle} value={requiredLicenseClass} onChange={(e) => setRequiredLicenseClass(e.target.value)}>
+                        <option value="VLOS">VLOS</option>
+                        <option value="BVLOS">BVLOS</option>
+                      </select>
+                    </label>
+                    <label style={{ fontSize: 12 }}>Requested Speed (m/s)<input style={inputStyle} value={requestedSpeedMps} onChange={(e) => setRequestedSpeedMps(e.target.value)} /></label>
+                    <label style={{ fontSize: 12 }}>Planned Start<input type="datetime-local" style={inputStyle} value={plannedStartAt} onChange={(e) => setPlannedStartAt(e.target.value)} /></label>
+                    <label style={{ fontSize: 12 }}>Planned End<input type="datetime-local" style={inputStyle} value={plannedEndAt} onChange={(e) => setPlannedEndAt(e.target.value)} /></label>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button type="button" style={chipStyle(false)} onClick={() => void runVerifyFromUav()} disabled={busy}>Verify</button>
+                    <button type="button" style={chipStyle(true)} onClick={() => void runFullSubmitMission()} disabled={busy}>Full Submit (UTM + DSS)</button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
+                    {[
+                      ["Verify", yesNoBadge(verify?.approved)],
+                      ["Full submit", yesNoBadge(fullSubmitApproved)],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                        <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
+                        <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ borderTop: "1px solid #eaecf0", paddingTop: 8, display: "grid", gap: 8 }}>
+                  <div style={{ fontWeight: 700, color: "#101828", fontSize: 13 }}>Operator License Registry</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.9fr 0.9fr 1.1fr auto", gap: 8, alignItems: "end" }}>
+                    <label style={{ fontSize: 12 }}>License ID<input style={inputStyle} value={licenseId} onChange={(e) => setLicenseId(e.target.value)} /></label>
+                    <label style={{ fontSize: 12 }}>Class
+                      <select style={inputStyle} value={licenseClass} onChange={(e) => setLicenseClass(e.target.value)}>
+                        <option value="VLOS">VLOS</option>
+                        <option value="BVLOS">BVLOS</option>
+                      </select>
+                    </label>
+                    <label style={{ fontSize: 12 }}>UAV Size
+                      <select style={inputStyle} value={licenseUavSizeClass} onChange={(e) => setLicenseUavSizeClass(e.target.value)}>
+                        <option value="small">Small</option>
+                        <option value="middle">Middle</option>
+                        <option value="large">Large</option>
+                      </select>
+                    </label>
+                    <label style={{ fontSize: 12 }}>Expiry<input type="datetime-local" style={inputStyle} value={licenseExpiry} onChange={(e) => setLicenseExpiry(e.target.value)} /></label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 8 }}>
+                      <input type="checkbox" checked={licenseActive} onChange={(e) => setLicenseActive(e.target.checked)} /> Active
+                    </label>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button type="button" style={chipStyle(false)} onClick={() => void registerLicense()} disabled={busy}>Register / Update</button>
+                    <div style={{ fontSize: 11, color: "#667085" }}>
+                      Effective size class: <strong>{String(effectiveRegs?.uav_size_class ?? "-")}</strong>
+                    </div>
+                  </div>
+                  <div style={{ overflowX: "auto", maxHeight: 220 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>ID</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Class</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>UAV Size</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Expiry</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Active</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {licenseRows.length === 0 ? (
+                          <tr><td colSpan={5} style={{ padding: "8px 4px", color: "#667085" }}>No licenses found.</td></tr>
+                        ) : (
+                          licenseRows.map(([id, rec]) => {
+                            const row = asRecord(rec);
+                            return (
+                              <tr key={id}>
+                                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{id}</code></td>
+                                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(row?.license_class ?? "")}</td>
+                                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(row?.uav_size_class ?? "")}</td>
+                                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(row?.expires_at ?? "")}</code></td>
+                                <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{yesNoBadge(row?.active)}</td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 700, color: "#101828" }}>UTM Checks (Advanced)</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" style={chipStyle(false)} onClick={() => void runRouteChecks()} disabled={busy}>Route</button>
+              <button type="button" style={chipStyle(false)} onClick={() => void runTimeWindowCheck()} disabled={busy}>Time</button>
+              <button type="button" style={chipStyle(false)} onClick={() => void runLicenseCheck()} disabled={busy}>License</button>
+              <button type="button" style={chipStyle(false)} onClick={() => void reserveCorridor()} disabled={busy}>Corridor</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
+              {[
+                ["Route bounds", yesNoBadge(routeGeofence?.geofence_ok ?? routeGeofence?.bounds_ok ?? routeGeofence?.ok)],
+                ["Route NFZ", yesNoBadge(routeNfz?.ok)],
+                ["Route regulation", yesNoBadge(routeRegs?.ok)],
+                ["Time window", yesNoBadge(timeWindow?.ok)],
+                ["License", yesNoBadge(licenseCheck?.ok)],
+                ["Corridor", yesNoBadge(corridor?.reserved)],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                  <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
+                  <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 700, color: "#101828" }}>Latest Approval</div>
+            {decisionPanel(activeApproval?.decision)}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
+              {[
+                ["Approved", yesNoBadge(activeApproval?.approved)],
+                ["Route bounds", yesNoBadge(asRecord(activeApprovalChecks?.route_bounds)?.ok ?? asRecord(activeApprovalChecks?.route_bounds)?.geofence_ok)],
+                ["Weather", yesNoBadge(asRecord(activeApprovalChecks?.weather)?.ok)],
+                ["No-fly zone", yesNoBadge(asRecord(activeApprovalChecks?.no_fly_zone)?.ok)],
+                ["Regulation", yesNoBadge(asRecord(activeApprovalChecks?.regulations)?.ok)],
+                ["Time", yesNoBadge(asRecord(activeApprovalChecks?.time_window)?.ok)],
+                ["Operator", yesNoBadge(asRecord(activeApprovalChecks?.operator_license)?.ok)],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                  <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
+                  <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828" }}>USS Layer Details</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button type="button" style={chipStyle(false)} onClick={() => void deleteUssProblemIntents(ussProblemIntentIds)} disabled={busy || ussProblemIntentIds.length === 0}>
+                  Delete Problem Intents ({ussProblemIntentIds.length})
+                </button>
+                <div>{yesNoBadge(layeredUss?.ok)}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: layeredUss?.ok === true ? "#027a48" : "#b42318" }}>{ussLayerReason}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>
+              {[
+                ["Participants", String(layeredUss?.participant_count ?? dssParticipants.length)],
+                ["Active participants", String(layeredUss?.active_participant_count ?? "-")],
+                ["Managers seen", String(layeredUss?.manager_uss_seen_count ?? ussManagerIds.length)],
+                ["Unknown managers", String(layeredUss?.unknown_manager_count ?? layeredUnknownManagerIds.length)],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                  <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
+                  <div style={{ minHeight: 18, fontSize: 14, fontWeight: 700, color: "#101828" }}>{String(value)}</div>
+                </div>
+              ))}
+            </div>
+            {layeredUnknownManagerIds.length > 0 ? (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {layeredUnknownManagerIds.slice(0, 8).map((manager) => (
+                  <span key={manager} style={{ fontSize: 10, color: "#b42318", border: "1px solid #fecdca", borderRadius: 999, padding: "2px 6px", background: "#fef3f2" }}>
+                    unknown: {manager}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <div style={{ overflowX: "auto", maxHeight: 190 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Manager USS</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Known</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Active</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Participant status</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Intent count</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ussManagerRows.length === 0 ? (
+                    <tr><td colSpan={6} style={{ padding: "8px 4px", color: "#667085" }}>No manager USS IDs found in intents.</td></tr>
+                  ) : (
+                    ussManagerRows.slice(0, 16).map((row) => (
+                      <tr key={row.manager}>
+                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.manager, 24)}</code></td>
+                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{yesNoBadge(row.known)}</td>
+                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{yesNoBadge(row.active)}</td>
+                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{row.participantStatus}</code></td>
+                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(row.intentCount)}</td>
+                        <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>
+                          <button
+                            type="button"
+                            style={chipStyle(false)}
+                            onClick={() => void deleteUssProblemIntents(ussIntentIdsByManager[row.manager] ?? [])}
+                            disabled={busy || !Array.isArray(ussIntentIdsByManager[row.manager]) || (ussIntentIdsByManager[row.manager] ?? []).length === 0}
+                          >
+                            Delete ({(ussIntentIdsByManager[row.manager] ?? []).length})
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ borderTop: "1px solid #eaecf0", paddingTop: 8, display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>USS-Linked Intents (Detailed)</div>
+              <div style={{ overflowX: "auto", maxHeight: 220 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Intent</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>UAV</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Manager USS</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Known/Active</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>State/Priority</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Policy</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Blocking</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Lifecycle</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Time Window</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Updated</th>
+                      <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ussIntentRows.length === 0 ? (
+                      <tr><td colSpan={11} style={{ padding: "8px 4px", color: "#667085" }}>No USS-linked intents.</td></tr>
+                    ) : (
+                      ussIntentRows.slice(0, 20).map((row, idx) => (
+                        <tr key={`${row.intentId}-${idx}`}>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.intentId, 24)}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{trimValue(row.uavId, 18)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.managerUssId, 18)}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>
+                            {yesNoBadge(row.known)} {yesNoBadge(row.active)}
+                          </td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{row.state}/{row.priority}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{row.conflictPolicy}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(row.blocking)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{trimValue(row.lifecyclePhase, 16)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(`${row.timeStart} -> ${row.timeEnd}`, 26)}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.updatedAt, 24)}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>
+                            <button type="button" style={chipStyle(false)} onClick={() => void deleteDssIntent(row.intentId)} disabled={busy || !row.intentId}>Delete</button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828" }}>DSS Dispatcher</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <button type="button" style={chipStyle(false)} onClick={() => void toggleDispatcherEnabled()} disabled={busy}>
+                  {dispatch?.dispatcher_enabled === true ? "Disable Dispatcher" : "Enable Dispatcher"}
+                </button>
+                <button type="button" style={chipStyle(false)} onClick={() => void runDispatchCycle()} disabled={busy}>Run One Dispatch Cycle</button>
+                <button type="button" style={chipStyle(true)} onClick={() => void runDssAutoRecover()} disabled={busy}>DSS Auto Recover</button>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8, fontSize: 12 }}>
+              {[
+                ["Enabled", yesNoBadge(dispatch?.dispatcher_enabled)],
+                ["Worker alive", yesNoBadge(dispatch?.worker_thread_alive)],
+                ["Worker state", String(dispatch?.worker_stop_requested ? "STOP_REQUESTED" : "RUNNING")],
+                ["Pending", String(dispatchCounts?.pending ?? "-")],
+                ["Delivered", String(dispatchCounts?.delivered ?? "-")],
+                ["Failed", String(dispatchCounts?.failed ?? "-")],
+                ["Last attempted", String(dispatchLast?.attempted ?? "-")],
+                ["Last delivered", String(dispatchLast?.delivered ?? "-")],
+                ["Last failed", String(dispatchLast?.failed ?? "-")],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                  <div style={{ color: "#667085", fontSize: 11 }}>{label}</div>
+                  <div style={{ minHeight: 18 }}>{value as React.ReactNode}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#667085" }}>
+              Interval {String(dispatchConfig?.interval_s ?? "-")}s, batch {String(dispatchConfig?.batch_size ?? "-")}, timeout {String(dispatchConfig?.timeout_s ?? "-")}s, max attempts {String(dispatchConfig?.max_attempts ?? "-")}. Last update <code>{String(dispatchLast?.updated_at ?? "-")}</code>.
+            </div>
+          </div>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontWeight: 700, color: "#101828" }}>DSS Detail Data</div>
+              <div style={{ fontSize: 11, color: "#667085" }}>
+                Adapter <code>{String(dssSummary?.intents_adapter_mode ?? "-")}</code> / Subscriptions <code>{String(dssSummary?.subscriptions_adapter_mode ?? "-")}</code>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>
+              {[
+                ["Intents", dssOperationalIntents.length],
+                ["Subscriptions", dssSubscriptions.length],
+                ["Participants", dssParticipants.length],
+                ["Recent Notifications", dssNotifications.length],
+              ].map(([label, value]) => (
+                <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 11, color: "#667085" }}>{String(label)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#101828" }}>{String(value)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+              <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: 8, display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>Operational Intents</div>
+                <div style={{ overflowX: "auto", maxHeight: 180 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Intent</th>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>UAV</th>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>USS</th>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>State</th>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Blocking</th>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Updated</th>
+                        <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dssOperationalIntents.length === 0 ? (
+                        <tr><td colSpan={7} style={{ padding: "8px 4px", color: "#667085" }}>No intents.</td></tr>
+                      ) : (
+                        dssOperationalIntents.slice(0, 12).map((row) => {
+                          const metadata = asRecord(row.metadata);
+                          const conflictSummary = asRecord(row.conflict_summary);
+                          const intentId = String(row.intent_id ?? "").trim();
+                          return (
+                            <tr key={intentId || String(Math.random())}>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.intent_id, 24)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{trimValue(metadata?.uav_id ?? "-", 18)}</td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{trimValue(row.manager_uss_id ?? "-", 18)}</td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(row.state ?? "-")}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(conflictSummary?.blocking ?? 0)}</td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.updated_at ?? "-", 24)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>
+                                <button type="button" style={chipStyle(false)} onClick={() => void deleteDssIntent(intentId)} disabled={busy || !intentId}>Delete</button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: 8, display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>Subscriptions / Participants</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={{ overflowX: "auto", maxHeight: 160 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Subscription</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>USS</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Expires</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dssSubscriptions.length === 0 ? (
+                          <tr><td colSpan={3} style={{ padding: "8px 4px", color: "#667085" }}>No subscriptions.</td></tr>
+                        ) : (
+                          dssSubscriptions.slice(0, 10).map((row) => (
+                            <tr key={String(row.subscription_id ?? Math.random())}>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.subscription_id, 22)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{trimValue(row.manager_uss_id ?? "-", 18)}</td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.expires_at ?? "-", 24)}</code></td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ overflowX: "auto", maxHeight: 160 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Participant</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Status</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Roles</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dssParticipants.length === 0 ? (
+                          <tr><td colSpan={3} style={{ padding: "8px 4px", color: "#667085" }}>No participants.</td></tr>
+                        ) : (
+                          dssParticipants.slice(0, 10).map((row) => (
+                            <tr key={String(row.participant_id ?? Math.random())}>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.participant_id, 22)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(row.status ?? "-")}</td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{trimValue(Array.isArray(row.roles) ? row.roles.join(",") : "-", 20)}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: 8, display: "grid", gap: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>DSS Notifications</div>
+                  <button type="button" style={chipStyle(false)} onClick={() => setDssNotifExpanded((v) => !v)}>
+                    {dssNotifExpanded ? "Collapse" : "Expand"}
+                  </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8, fontSize: 11 }}>
+                  {[
+                    ["Pending", dssNotifStatusCounts.pending],
+                    ["Delivered", dssNotifStatusCounts.delivered],
+                    ["Failed", dssNotifStatusCounts.failed],
+                    ["Acked", dssNotifStatusCounts.acked],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fcfcfd", padding: "6px 8px", display: "grid", gap: 2 }}>
+                      <div style={{ color: "#667085" }}>{String(label)}</div>
+                      <div style={{ fontWeight: 700, color: "#101828" }}>{String(value)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(130px, 1fr) minmax(130px, 1fr) auto", gap: 8, alignItems: "end" }}>
+                  <label style={{ fontSize: 12 }}>Status
+                    <select style={inputStyle} value={dssNotifStatusFilter} onChange={(e) => setDssNotifStatusFilter(e.target.value)}>
+                      {["pending", "delivered", "failed", "acked", "all"].map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: 12 }}>Type
+                    <select style={inputStyle} value={dssNotifTypeFilter} onChange={(e) => setDssNotifTypeFilter(e.target.value)}>
+                      <option value="all">all</option>
+                      {dssNotifTypeOptions.map((typeId) => (
+                        <option key={typeId} value={typeId}>{typeId}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div style={{ fontSize: 11, color: "#667085", paddingBottom: 8 }}>
+                    Showing {String(dssNotificationsFiltered.length)} / {String(dssNotifications.length)}
+                  </div>
+                </div>
+                {dssNotifExpanded ? (
+                  <div style={{ overflowX: "auto", maxHeight: 220 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Notification</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Status</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Type</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Source Intent</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Position/Callback</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Attempts</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Last Error</th>
+                          <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dssNotificationsFiltered.length === 0 ? (
+                          <tr><td colSpan={8} style={{ padding: "8px 4px", color: "#667085" }}>No notifications for selected status/type.</td></tr>
+                        ) : (
+                          dssNotificationsFiltered.slice(0, 120).map((row) => {
+                            const notificationId = String(row.notification_id ?? "").trim();
+                            const status = String(row.status ?? "").trim().toLowerCase();
+                            return (
+                            <tr key={notificationId || String(Math.random())}>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.notification_id, 24)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{String(row.status ?? "-")}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{trimValue(row.event_type ?? "-", 14)}</td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.source_intent_id ?? "-", 24)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.callback_url ?? "-", 28)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{String(row.dispatch_attempts ?? 0)}</td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{trimValue(row.last_error ?? "-", 22)}</code></td>
+                              <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>
+                                <button
+                                  type="button"
+                                  style={chipStyle(false)}
+                                  onClick={() => void ackDssNotification(notificationId)}
+                                  disabled={busy || !notificationId || status === "acked"}
+                                >
+                                  {status === "acked" ? "Acked" : "Ack"}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: "#667085" }}>Expanded view shows pending DSS and other statuses by type and callback position.</div>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
-
     </div>
   );
 }

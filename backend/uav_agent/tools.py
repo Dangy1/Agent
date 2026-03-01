@@ -10,6 +10,7 @@ from typing import List
 
 from langchain.tools import tool
 
+from .command_adapter import execute_uav_control
 from .replan import REPLAN_PROFILE_PRESETS, uav_replan_route_via_utm_nfz
 from .simulator import SIM
 from utm_agent.service import UTM_SERVICE
@@ -107,17 +108,49 @@ def uav_launch(uav_id: str = "uav-1", require_utm_approval: bool = True) -> dict
                     "details": launch_check.get("details"),
                     "hint": "Re-run uav_request_utm_approval or check UTM weather/no-fly/regulation tools.",
                 }
-        snap = SIM.launch(uav_id)
-        return {"status": "success", "agent": "uav", "result": snap}
+        control = execute_uav_control("launch", uav_id=uav_id)
+        if control.get("status") != "success":
+            return {
+                "status": "error",
+                "agent": "uav",
+                "tool": "uav_launch",
+                "error": str(control.get("error") or "launch_failed"),
+                "control_adapter": control.get("control_adapter"),
+                "adapter_result": control.get("adapter_result"),
+                "hint": "Check live control adapter settings or fall back to simulator mode.",
+            }
+        return {
+            "status": "success",
+            "agent": "uav",
+            "result": control.get("result"),
+            "control_adapter": control.get("control_adapter"),
+            "adapter_result": control.get("adapter_result"),
+        }
     except Exception as e:
         return {"status": "error", "agent": "uav", "tool": "uav_launch", "error": str(e), "hint": "Call uav_request_utm_approval first."}
 
 
 @tool
 def uav_sim_step(uav_id: str = "uav-1", ticks: int = 1) -> dict:
-    """Advance the simulated UAV mission by one or more ticks."""
+    """Advance UAV mission state by one or more ticks (sim or configured control adapter)."""
     try:
-        return {"status": "success", "agent": "uav", "result": SIM.step(uav_id, ticks=ticks)}
+        control = execute_uav_control("step", uav_id=uav_id, params={"ticks": int(ticks)})
+        if control.get("status") != "success":
+            return {
+                "status": "error",
+                "agent": "uav",
+                "tool": "uav_sim_step",
+                "error": str(control.get("error") or "step_failed"),
+                "control_adapter": control.get("control_adapter"),
+                "adapter_result": control.get("adapter_result"),
+            }
+        return {
+            "status": "success",
+            "agent": "uav",
+            "result": control.get("result"),
+            "control_adapter": control.get("control_adapter"),
+            "adapter_result": control.get("adapter_result"),
+        }
     except Exception as e:
         return {"status": "error", "agent": "uav", "tool": "uav_sim_step", "error": str(e)}
 
@@ -130,29 +163,93 @@ def uav_status(uav_id: str = "uav-1") -> dict:
 
 @tool
 def uav_hold(uav_id: str = "uav-1", reason: str = "operator_request") -> dict:
-    """Command UAV to hold/loiter in simulator."""
-    return {"status": "success", "agent": "uav", "result": SIM.hold(uav_id, reason)}
+    """Command UAV hold/loiter via configured control adapter."""
+    control = execute_uav_control("hold", uav_id=uav_id, params={"reason": reason})
+    if control.get("status") != "success":
+        return {
+            "status": "error",
+            "agent": "uav",
+            "tool": "uav_hold",
+            "error": str(control.get("error") or "hold_failed"),
+            "control_adapter": control.get("control_adapter"),
+            "adapter_result": control.get("adapter_result"),
+        }
+    return {
+        "status": "success",
+        "agent": "uav",
+        "result": control.get("result"),
+        "control_adapter": control.get("control_adapter"),
+        "adapter_result": control.get("adapter_result"),
+    }
 
 
 @tool
 def uav_resume(uav_id: str = "uav-1") -> dict:
-    """Resume UAV mission after hold/pause in simulator."""
+    """Resume UAV mission after hold/pause via configured control adapter."""
     try:
-        return {"status": "success", "agent": "uav", "result": SIM.resume(uav_id)}
+        control = execute_uav_control("resume", uav_id=uav_id)
+        if control.get("status") != "success":
+            return {
+                "status": "error",
+                "agent": "uav",
+                "tool": "uav_resume",
+                "error": str(control.get("error") or "resume_failed"),
+                "control_adapter": control.get("control_adapter"),
+                "adapter_result": control.get("adapter_result"),
+            }
+        return {
+            "status": "success",
+            "agent": "uav",
+            "result": control.get("result"),
+            "control_adapter": control.get("control_adapter"),
+            "adapter_result": control.get("adapter_result"),
+        }
     except Exception as e:
         return {"status": "error", "agent": "uav", "tool": "uav_resume", "error": str(e)}
 
 
 @tool
 def uav_return_to_home(uav_id: str = "uav-1") -> dict:
-    """Command UAV return-to-home in simulator."""
-    return {"status": "success", "agent": "uav", "result": SIM.rth(uav_id)}
+    """Command UAV return-to-home via configured control adapter."""
+    control = execute_uav_control("rth", uav_id=uav_id)
+    if control.get("status") != "success":
+        return {
+            "status": "error",
+            "agent": "uav",
+            "tool": "uav_return_to_home",
+            "error": str(control.get("error") or "rth_failed"),
+            "control_adapter": control.get("control_adapter"),
+            "adapter_result": control.get("adapter_result"),
+        }
+    return {
+        "status": "success",
+        "agent": "uav",
+        "result": control.get("result"),
+        "control_adapter": control.get("control_adapter"),
+        "adapter_result": control.get("adapter_result"),
+    }
 
 
 @tool
 def uav_land(uav_id: str = "uav-1") -> dict:
-    """Command UAV landing in simulator."""
-    return {"status": "success", "agent": "uav", "result": SIM.land(uav_id)}
+    """Command UAV landing via configured control adapter."""
+    control = execute_uav_control("land", uav_id=uav_id)
+    if control.get("status") != "success":
+        return {
+            "status": "error",
+            "agent": "uav",
+            "tool": "uav_land",
+            "error": str(control.get("error") or "land_failed"),
+            "control_adapter": control.get("control_adapter"),
+            "adapter_result": control.get("adapter_result"),
+        }
+    return {
+        "status": "success",
+        "agent": "uav",
+        "result": control.get("result"),
+        "control_adapter": control.get("control_adapter"),
+        "adapter_result": control.get("adapter_result"),
+    }
 
 
 TOOLS = [

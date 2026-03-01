@@ -160,6 +160,7 @@ def verify_from_uav(payload: VerifyFromUavPayload) -> Dict[str, Any]:
     # Keep simulator state aligned with UTM-side verification so flight controls use the same approval/check data
     # shown in the UI.
     mission_save = None
+    dss_intent_result = None
     if isinstance(result, dict):
         SIM.set_approval(payload.uav_id, result)
         checks = result.get("checks") if isinstance(result.get("checks"), dict) else {}
@@ -200,6 +201,26 @@ def verify_from_uav(payload: VerifyFromUavPayload) -> Dict[str, Any]:
             planned_end_at=payload.planned_end_at,
             copy_agent_if_missing=False,
         )
+        approved = bool(result.get("approved"))
+        dss_intent_result = _upsert_local_dss_intent_for_uav(
+            user_id=resolved_user_id,
+            uav_id=payload.uav_id,
+            route_id=route_id,
+            waypoints=[dict(w) for w in waypoints if isinstance(w, dict)],
+            airspace_segment=payload.airspace_segment,
+            state="contingent" if approved else "nonconforming",
+            conflict_policy="conditional_approve",
+            source="verify_from_uav",
+            lifecycle_phase="verified" if approved else "verify_failed",
+            metadata_extra={"approved": approved, "required_license_class": payload.required_license_class},
+            planned_start_at=payload.planned_start_at,
+            planned_end_at=payload.planned_end_at,
+        )
+        _save_uav_utm_session(
+            user_id=resolved_user_id,
+            uav_id=payload.uav_id,
+            utm_dss_result=dss_intent_result if isinstance(dss_intent_result, dict) else None,
+        )
     sync = _log_uav_action("utm_verify_from_uav", payload={**payload.model_dump(), "user_id": resolved_user_id}, result=result, entity_id=payload.uav_id)
     return {
         "status": "success",
@@ -209,4 +230,5 @@ def verify_from_uav(payload: VerifyFromUavPayload) -> Dict[str, Any]:
         "session": _get_uav_utm_session(user_id=resolved_user_id, uav_id=payload.uav_id),
         "mission": mission_save.get("mission") if isinstance(mission_save, dict) else None,
         "approved_route_records": mission_save.get("approved_route_records") if isinstance(mission_save, dict) else None,
+        "dss_intent_result": dss_intent_result,
     }

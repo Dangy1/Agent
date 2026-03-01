@@ -39,6 +39,8 @@ def dispatch_observe_command(command: Dict[str, Any], state: Dict[str, Any]) -> 
             return utm_tools.utm_dss_query_participants.invoke(params)
         if op in {"query_notifications", "dss_query_notifications"}:
             return utm_tools.utm_dss_query_notifications.invoke(params)
+        if op in {"conformance_last", "dss_conformance_last"}:
+            return utm_tools.utm_dss_get_last_conformance.invoke(params)
 
     if domain == "network":
         if op == "health":

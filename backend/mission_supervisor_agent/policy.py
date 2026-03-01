@@ -55,6 +55,17 @@ def _latest_proposed_action(state: MissionState) -> Dict[str, Any]:
     return dict(derived[-1]) if derived else {}
 
 
+def _jurisdiction_profile_id(state: MissionState) -> str:
+    mission = state.get("mission")
+    metadata = mission.get("metadata") if isinstance(mission, dict) else {}
+    if isinstance(metadata, dict) and str(metadata.get("jurisdiction_profile", "")).strip():
+        return str(metadata.get("jurisdiction_profile")).strip().lower()
+    raw = state.get("metadata")
+    if isinstance(raw, dict) and str(raw.get("jurisdiction_profile", "")).strip():
+        return str(raw.get("jurisdiction_profile")).strip().lower()
+    return ""
+
+
 def _operation_type(action: Dict[str, Any]) -> str:
     op_type = str(action.get("operation_type") or "")
     if op_type in {"observe", "actuate", "unknown"}:
@@ -80,6 +91,8 @@ def _phase_allows_action(phase: str, domain: str, op: str) -> bool:
         ("utm", "dss_query_participants"),
         ("utm", "query_notifications"),
         ("utm", "dss_query_notifications"),
+        ("utm", "conformance_last"),
+        ("utm", "dss_conformance_last"),
         ("network", "health"),
         ("network", "kpm_monitor"),
     }
@@ -183,6 +196,8 @@ def _append_snapshot_guardrails(state: MissionState, action: Dict[str, Any], not
             ("utm", "dss_query_participants"),
             ("utm", "query_notifications"),
             ("utm", "dss_query_notifications"),
+            ("utm", "conformance_last"),
+            ("utm", "dss_conformance_last"),
             ("network", "health"),
             ("network", "slice_monitor"),
             ("network", "kpm_monitor"),
@@ -258,6 +273,33 @@ def _append_snapshot_guardrails(state: MissionState, action: Dict[str, Any], not
             notes.append("network_slice_apply_blocked_preflight_unstable_network")
 
 
+def _append_profile_guardrails(state: MissionState, action: Dict[str, Any], notes: List[str]) -> None:
+    profile_id = _jurisdiction_profile_id(state)
+    if not profile_id:
+        return
+    domain = str(action.get("domain") or "")
+    op = str(action.get("op") or "")
+    if (domain, op) != ("uav", "launch"):
+        return
+    utm = state.get("utm_state_snapshot") or state.get("utm_state") or {}
+    uav = state.get("uav_state_snapshot") or state.get("uav_state") or {}
+    dss = utm.get("dss") if isinstance(utm, dict) and isinstance(utm.get("dss"), dict) else {}
+    dss_result = uav.get("utm_dss_result") if isinstance(uav, dict) and isinstance(uav.get("utm_dss_result"), dict) else {}
+
+    if profile_id.startswith("eu_ussp"):
+        if bool(dss.get("subscription_stale")):
+            notes.append("eu_ussp_launch_blocked_dss_subscription_stale")
+        if float(dss.get("pending_notification_lag_sec_max", 0.0) or 0.0) > 180.0:
+            notes.append("eu_ussp_launch_blocked_dss_notification_lag")
+        if str(dss_result.get("status", "")).strip().lower() == "error" or str(dss_result.get("error", "")).strip():
+            notes.append("eu_ussp_launch_blocked_dss_publish_error")
+        if bool(dss_result.get("degraded")):
+            notes.append("eu_ussp_launch_blocked_degraded_dss_mode")
+    elif profile_id.startswith("us_faa"):
+        if int(dss.get("blocking_conflict_count", 0) or 0) > 0:
+            notes.append("us_faa_launch_blocked_dss_blocking_conflicts")
+
+
 def build_policy_decision_record(
     state: MissionState,
     *,
@@ -304,6 +346,7 @@ def validate_policy(state: MissionState) -> List[str]:
         notes.append("high_risk_requires_approvals")
     if action:
         _append_snapshot_guardrails(state, action, notes)
+        _append_profile_guardrails(state, action, notes)
     return notes
 
 

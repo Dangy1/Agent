@@ -4,6 +4,7 @@ export type SharedPageState = {
   uavApiBase: string;
   utmApiBase: string;
   networkApiBase: string;
+  utmAuthToken: string;
   revision: number;
   updatedAt: string;
 };
@@ -18,6 +19,7 @@ function defaults(): SharedPageState {
     uavApiBase: "http://127.0.0.1:8020",
     utmApiBase: "http://127.0.0.1:8021",
     networkApiBase: "http://127.0.0.1:8022",
+    utmAuthToken: "local-dev-token",
     revision: 0,
     updatedAt: new Date().toISOString(),
   };
@@ -82,4 +84,3 @@ export function subscribeSharedPageState(listener: (state: SharedPageState) => v
     window.removeEventListener("storage", onStorage);
   };
 }
-

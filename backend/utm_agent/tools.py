@@ -1,16 +1,25 @@
 from langchain.tools import tool
 
 from agent_db import AgentDB
+from .dss_gateway import (
+    gateway_delete_operational_intent,
+    gateway_delete_subscription,
+    gateway_query_operational_intents,
+    gateway_query_subscriptions,
+    gateway_upsert_operational_intent,
+    gateway_upsert_subscription,
+)
 from .operational_intents import delete_intent as dss_delete_intent
 from .operational_intents import query_intents as dss_query_intents
 from .operational_intents import upsert_intent as dss_upsert_intent
-from .service import UTM_SERVICE
+from .service import UTM_SERVICE, reserve_corridor_with_lease
 from .subscriptions import delete_subscription as dss_delete_subscription
 from .subscriptions import impacted_subscriptions as dss_impacted_subscriptions
 from .subscriptions import query_subscriptions as dss_query_subscriptions
 from .subscriptions import upsert_subscription as dss_upsert_subscription
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from uav_agent.simulator import SIM
 
 
 _UTM_DB = AgentDB("utm")
@@ -120,9 +129,84 @@ def utm_verify_flight_plan(
 
 
 @tool
-def utm_reserve_corridor(uav_id: str = "uav-1", airspace_segment: str = "sector-A3") -> dict:
-    """Reserve an airspace corridor (stub)."""
-    return {"status": "success", "agent": "utm", "result": {"uav_id": uav_id, "airspace_segment": airspace_segment, "reserved": True}}
+def utm_reserve_corridor(
+    uav_id: str = "uav-1",
+    airspace_segment: str = "sector-A3",
+    manager_uss_id: str = "uss-local",
+    conflict_policy: str = "reject",
+    lease_ttl_s: int = 300,
+) -> dict:
+    """Reserve an airspace corridor via DSS-style intent reservation + lease semantics."""
+    sim = SIM.status(uav_id)
+    route_id = str(sim.get("route_id", "route-1"))
+    waypoints = list(sim.get("waypoints", [])) if isinstance(sim.get("waypoints"), list) else []
+    now = datetime.now(timezone.utc)
+    if not waypoints:
+        volume4d = {
+            "x": [-1e9, 1e9],
+            "y": [-1e9, 1e9],
+            "z": [0.0, 120.0],
+            "time_start": now.isoformat().replace("+00:00", "Z"),
+            "time_end": (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z"),
+        }
+    else:
+        xs = [float(w.get("x", 0.0)) for w in waypoints]
+        ys = [float(w.get("y", 0.0)) for w in waypoints]
+        zs = [float(w.get("z", 0.0)) for w in waypoints]
+        volume4d = {
+            "x": [min(xs), max(xs)],
+            "y": [min(ys), max(ys)],
+            "z": [max(0.0, min(zs)), max(zs)],
+            "time_start": now.isoformat().replace("+00:00", "Z"),
+            "time_end": (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z"),
+        }
+    intents = _get_dss_operational_intents()
+    upsert = reserve_corridor_with_lease(
+        intents,
+        uav_id=uav_id,
+        airspace_segment=airspace_segment,
+        route_id=route_id,
+        volume4d=volume4d,
+        manager_uss_id=manager_uss_id,
+        conflict_policy=conflict_policy,
+        lease_ttl_s=int(lease_ttl_s),
+        intent_id=f"corridor:{uav_id}:{airspace_segment}",
+        metadata={"source": "utm_tool_reserve_corridor"},
+    )
+    if upsert.get("stored"):
+        _set_dss_operational_intents(intents)
+    intent = upsert.get("intent") if isinstance(upsert.get("intent"), dict) else {}
+    event_type = "create" if int(intent.get("version", 1) or 1) <= 1 else "update"
+    subscriptions = _get_dss_subscriptions()
+    notifications = (
+        dss_impacted_subscriptions(
+            subscriptions,
+            changed_volume4d=intent.get("volume4d") if isinstance(intent.get("volume4d"), dict) else volume4d,
+            event_type=event_type,
+        )
+        if upsert.get("stored")
+        else []
+    )
+    queued = _queue_notifications(
+        notifications,
+        event_type=event_type,
+        source_intent_id=str(intent.get("intent_id") or ""),
+    )
+    return {
+        "status": "success",
+        "agent": "utm",
+        "result": {
+            "uav_id": uav_id,
+            "airspace_segment": airspace_segment,
+            "route_id": route_id,
+            "reserved": bool(upsert.get("stored")),
+            "reservation_id": upsert.get("reservation_id"),
+            "lease": upsert.get("lease"),
+            "intent_result": upsert,
+            "subscriptions_to_notify": notifications,
+            "queued_notifications": queued,
+        },
+    }
 
 
 @tool
@@ -132,19 +216,15 @@ def utm_check_geofence(
     airspace_segment: str = "sector-A3",
     waypoints: list[dict] | None = None,
 ) -> dict:
-    """Check basic geofence compliance for a route against simulated airspace bounds and no-fly zones."""
+    """Check geofence compliance for a route against FAA/PostGIS bounds (if enabled) and no-fly zones."""
     pts = waypoints or []
-    bounds = {"sector-A3": {"x": [0, 400], "y": [0, 300], "z": [0, 120]}}
-    seg = bounds.get(airspace_segment, {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0, 120]})
-    out_of_bounds = []
-    for i, wp in enumerate(pts):
-        x = float(wp.get("x", 0.0))
-        y = float(wp.get("y", 0.0))
-        z = float(wp.get("z", 0.0))
-        if not (seg["x"][0] <= x <= seg["x"][1] and seg["y"][0] <= y <= seg["y"][1] and seg["z"][0] <= z <= seg["z"][1]):
-            out_of_bounds.append({"index": i, "wp": {"x": x, "y": y, "z": z}})
+    route_bounds = UTM_SERVICE.check_route_bounds(airspace_segment, pts)
+    out_of_bounds = route_bounds.get("out_of_bounds") if isinstance(route_bounds.get("out_of_bounds"), list) else []
     nfz = UTM_SERVICE.check_no_fly_zones(pts)
-    geofence_ok = len(out_of_bounds) == 0 and nfz["ok"]
+    geofence_ok = bool(
+        (route_bounds.get("ok") is True or route_bounds.get("geofence_ok") is True or route_bounds.get("bounds_ok") is True)
+        and nfz["ok"]
+    )
     return {
         "status": "success",
         "agent": "utm",
@@ -154,6 +234,9 @@ def utm_check_geofence(
             "airspace_segment": airspace_segment,
             "geofence_ok": geofence_ok,
             "out_of_bounds": out_of_bounds,
+            "bounds": route_bounds.get("bounds"),
+            "matched_airspace": route_bounds.get("matched_airspace"),
+            "source": route_bounds.get("source"),
             "no_fly_zone": nfz,
         },
     }
@@ -249,37 +332,25 @@ def utm_dss_upsert_operational_intent(
     conflict_policy: str = "reject",
     uss_base_url: str = "",
     volume4d: dict | None = None,
+    constraints: dict | None = None,
     metadata: dict | None = None,
 ) -> dict:
     """Create or update a DSS-style operational intent with strategic conflict checks."""
-    intents = _get_dss_operational_intents()
-    out = dss_upsert_intent(
-        intents,
-        intent_id=intent_id or None,
-        manager_uss_id=manager_uss_id,
-        state=state,
-        priority=priority,
-        conflict_policy=conflict_policy,
-        uss_base_url=uss_base_url or None,
-        volume4d=volume4d or {},
-        metadata=metadata or {},
+    out = gateway_upsert_operational_intent(
+        _UTM_DB,
+        {
+            "intent_id": intent_id or None,
+            "manager_uss_id": manager_uss_id,
+            "state": state,
+            "priority": priority,
+            "conflict_policy": conflict_policy,
+            "uss_base_url": uss_base_url or None,
+            "volume4d": volume4d or {},
+            "constraints": constraints or {},
+            "metadata": metadata or {},
+        },
     )
-    if out.get("stored"):
-        _set_dss_operational_intents(intents)
-    subscriptions = _get_dss_subscriptions()
-    intent = out.get("intent") if isinstance(out.get("intent"), dict) else {}
-    event_type = "create" if int(intent.get("version", 1) or 1) <= 1 else "update"
-    notifications = (
-        dss_impacted_subscriptions(
-            subscriptions,
-            changed_volume4d=intent.get("volume4d") if isinstance(intent.get("volume4d"), dict) else (volume4d or {}),
-            event_type=event_type,
-        )
-        if out.get("stored")
-        else []
-    )
-    queued = _queue_notifications(notifications, event_type=event_type, source_intent_id=str(intent.get("intent_id") or ""))
-    return {"status": "success", "agent": "utm", "result": {**out, "subscriptions_to_notify": notifications, "queued_notifications": queued}}
+    return {"status": str(out.get("status") or "error"), "agent": "utm", "result": out.get("result"), "meta": {k: v for k, v in out.items() if k not in {"status", "result"}}}
 
 
 @tool
@@ -289,36 +360,22 @@ def utm_dss_query_operational_intents(
     volume4d: dict | None = None,
 ) -> dict:
     """Query DSS-style operational intents with optional state and 4D volume filters."""
-    intents = _get_dss_operational_intents()
-    items = dss_query_intents(
-        intents,
-        manager_uss_id=manager_uss_id or None,
-        states=states,
-        volume4d=volume4d,
+    out = gateway_query_operational_intents(
+        _UTM_DB,
+        {
+            "manager_uss_id": manager_uss_id or None,
+            "states": states,
+            "volume4d": volume4d,
+        },
     )
-    return {"status": "success", "agent": "utm", "result": {"count": len(items), "items": items}}
+    return {"status": str(out.get("status") or "error"), "agent": "utm", "result": out.get("result"), "meta": {k: v for k, v in out.items() if k not in {"status", "result"}}}
 
 
 @tool
 def utm_dss_delete_operational_intent(intent_id: str) -> dict:
     """Delete a DSS-style operational intent."""
-    intents = _get_dss_operational_intents()
-    before = intents.get(intent_id) if isinstance(intents.get(intent_id), dict) else {}
-    out = dss_delete_intent(intents, intent_id)
-    if out.get("deleted"):
-        _set_dss_operational_intents(intents)
-    subscriptions = _get_dss_subscriptions()
-    notifications = (
-        dss_impacted_subscriptions(
-            subscriptions,
-            changed_volume4d=before.get("volume4d") if isinstance(before, dict) and isinstance(before.get("volume4d"), dict) else {},
-            event_type="delete",
-        )
-        if out.get("deleted")
-        else []
-    )
-    queued = _queue_notifications(notifications, event_type="delete", source_intent_id=str(intent_id))
-    return {"status": "success", "agent": "utm", "result": {**out, "subscriptions_to_notify": notifications, "queued_notifications": queued}}
+    out = gateway_delete_operational_intent(_UTM_DB, intent_id)
+    return {"status": str(out.get("status") or "error"), "agent": "utm", "result": out.get("result"), "meta": {k: v for k, v in out.items() if k not in {"status", "result"}}}
 
 
 @tool
@@ -333,42 +390,37 @@ def utm_dss_upsert_subscription(
     metadata: dict | None = None,
 ) -> dict:
     """Create or update a DSS-style airspace subscription."""
-    subscriptions = _get_dss_subscriptions()
-    out = dss_upsert_subscription(
-        subscriptions,
-        subscription_id=subscription_id or None,
-        manager_uss_id=manager_uss_id,
-        uss_base_url=uss_base_url,
-        callback_url=callback_url,
-        volume4d=volume4d or {},
-        notify_for=notify_for,
-        expires_at=expires_at or None,
-        metadata=metadata or {},
+    out = gateway_upsert_subscription(
+        _UTM_DB,
+        {
+            "subscription_id": subscription_id or None,
+            "manager_uss_id": manager_uss_id,
+            "uss_base_url": uss_base_url,
+            "callback_url": callback_url,
+            "volume4d": volume4d or {},
+            "notify_for": notify_for,
+            "expires_at": expires_at or None,
+            "metadata": metadata or {},
+        },
     )
-    _set_dss_subscriptions(subscriptions)
-    return {"status": "success", "agent": "utm", "result": out}
+    return {"status": str(out.get("status") or "error"), "agent": "utm", "result": out.get("result"), "meta": {k: v for k, v in out.items() if k not in {"status", "result"}}}
 
 
 @tool
 def utm_dss_query_subscriptions(manager_uss_id: str = "", volume4d: dict | None = None) -> dict:
     """Query DSS-style subscriptions by USS and/or 4D volume."""
-    subscriptions = _get_dss_subscriptions()
-    items = dss_query_subscriptions(
-        subscriptions,
-        manager_uss_id=manager_uss_id or None,
-        volume4d=volume4d,
+    out = gateway_query_subscriptions(
+        _UTM_DB,
+        {"manager_uss_id": manager_uss_id or None, "volume4d": volume4d},
     )
-    return {"status": "success", "agent": "utm", "result": {"count": len(items), "items": items}}
+    return {"status": str(out.get("status") or "error"), "agent": "utm", "result": out.get("result"), "meta": {k: v for k, v in out.items() if k not in {"status", "result"}}}
 
 
 @tool
 def utm_dss_delete_subscription(subscription_id: str) -> dict:
     """Delete a DSS-style subscription."""
-    subscriptions = _get_dss_subscriptions()
-    out = dss_delete_subscription(subscriptions, subscription_id)
-    if out.get("deleted"):
-        _set_dss_subscriptions(subscriptions)
-    return {"status": "success", "agent": "utm", "result": out}
+    out = gateway_delete_subscription(_UTM_DB, subscription_id)
+    return {"status": str(out.get("status") or "error"), "agent": "utm", "result": out.get("result"), "meta": {k: v for k, v in out.items() if k not in {"status", "result"}}}
 
 
 @tool
@@ -521,6 +573,13 @@ def utm_dss_run_local_conformance() -> dict:
     }
 
 
+@tool
+def utm_dss_get_last_conformance() -> dict:
+    """Return latest persisted DSS conformance run summary."""
+    raw = _UTM_DB.get_state("dss_conformance_last")
+    return {"status": "success", "agent": "utm", "result": (dict(raw) if isinstance(raw, dict) else None)}
+
+
 TOOLS = [
     utm_verify_flight_plan,
     utm_reserve_corridor,
@@ -544,4 +603,5 @@ TOOLS = [
     utm_dss_query_notifications,
     utm_dss_ack_notification,
     utm_dss_run_local_conformance,
+    utm_dss_get_last_conformance,
 ]

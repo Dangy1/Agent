@@ -38,6 +38,8 @@ class MissionActionRecord(TypedDict, total=False):
     ts: str
     phase: str
     status: str
+    command_id: str
+    correlation_id: str
     operation_type: str
     domain: str
     op: str
@@ -90,6 +92,7 @@ class MissionState(TypedDict, total=False):
     applied_actions: List[MissionActionRecord]
     decision_log: List[MissionDecisionRecord]
     evidence_log: List[Dict[str, Any]]
+    command_bus_log: List[Dict[str, Any]]
     rollback_context: List[Dict[str, Any]]
     last_tool_result: Dict[str, Any]
     execution_error: Optional[str]

@@ -6,12 +6,15 @@ from typing import Any, Dict, List
 
 from langgraph.graph import END, START, StateGraph
 
+from .command_bus import AuditableCommandBus
 from .domain_dispatch import classify_command_operation_type, dispatch_domain_agent
 from .lock_manager import LOCK_MANAGER
 from .planner import build_intent, build_plan, classify_request, derive_mission_phase
 from .policy import assess_risk, build_policy_decision_record, build_proposed_actions, find_missing_approvals, validate_policy
 from .state import MissionState
 from .watchers import ingest_events, refresh_network_state, refresh_uav_state, refresh_utm_state
+
+COMMAND_BUS = AuditableCommandBus(dispatch_domain_agent)
 
 
 def _last_user_text(messages: Any) -> str:
@@ -118,9 +121,14 @@ def dispatch_step(state: MissionState) -> MissionState:
 
 def execute_step(state: MissionState) -> MissionState:
     cmd = dict(state.get("current_command") or {})
-    result = dispatch_domain_agent(cmd, state)
+    bus_output = COMMAND_BUS.execute(cmd, state)
+    result = dict(bus_output.get("result") or {})
+    audit = dict(bus_output.get("audit") or {})
     ev = list(state.get("evidence_log") or [])
-    ev.append({"node": "execute_step", "command": cmd, "result": result})
+    ev.append({"node": "execute_step", "command": cmd, "audit": audit, "result": result})
+    bus_log = list(state.get("command_bus_log") or [])
+    if audit:
+        bus_log.append(audit)
     approvals = list(state.get("approvals") or [])
     if cmd.get("domain") == "utm" and result.get("status") == "success":
         rec = ((result.get("result") or {}) if isinstance(result.get("result"), dict) else {})
@@ -141,13 +149,15 @@ def execute_step(state: MissionState) -> MissionState:
     if cmd:
         applied_actions.append(
             {
-                "ts": (result.get("result") or {}).get("timestamp", "") if isinstance(result, dict) and isinstance(result.get("result"), dict) else "",
+                "ts": str(audit.get("responded_at") or (result.get("result") or {}).get("timestamp", "")),
                 "phase": str(state.get("mission_phase") or "unknown"),
                 "status": "applied" if result.get("status") == "success" else "failed",
                 "operation_type": classify_command_operation_type(cmd),
                 "domain": str(cmd.get("domain") or ""),
                 "op": str(cmd.get("op") or ""),
                 "step_id": str(cmd.get("step_id") or ""),
+                "command_id": str(audit.get("command_id") or ""),
+                "correlation_id": str(audit.get("correlation_id") or ""),
                 "params": dict(cmd.get("params") or {}),
                 "result": dict(result) if isinstance(result, dict) else {"raw": result},
             }
@@ -163,6 +173,7 @@ def execute_step(state: MissionState) -> MissionState:
         "rollback_context": rb_ctx,
         "approvals": approvals,
         "applied_actions": applied_actions,
+        "command_bus_log": bus_log,
     }
 
 

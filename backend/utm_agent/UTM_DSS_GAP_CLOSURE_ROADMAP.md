@@ -199,44 +199,61 @@ Primary references for implementation behavior:
 9. Add operational SLOs + incident playbooks before pilot operations.
 10. Run periodic red-team and failure-injection tests for resilience and cyber posture.
 
+### 5.1 Current status check (2026-02-27)
+
+1. `implemented` Authority profiles exist and are loaded by API/cert pack (`profiles/*.yaml`, `backend/utm_agent/cert_pack.py`, `backend/utm_agent/api.py`).
+2. `implemented` Standards contracts module added (`backend/utm_agent/contracts.py`) and wired into DSS intent/subscription ingestion.
+3. `implemented` DSS primitives are in place for intents/subscriptions/participants/notifications (`backend/utm_agent/operational_intents.py`, `subscriptions.py`, `api.py`).
+4. `implemented` Deterministic policy and flight gate are active (`backend/utm_agent/service.py`, `backend/uav_agent/api_shared.py`).
+5. `implemented` Agent layering exists with planner/policy/DSS/certification flows and signed DSS intent exchange checks.
+6. `implemented` Single auditable command bus is active for supervisor execution (`backend/mission_supervisor_agent/command_bus.py`, `graph.py`).
+7. `implemented` Conformance suite is CI-blocking (`backend/test/run_utm_conformance_ci.sh`, `.github/workflows/utm-conformance.yml`).
+8. `implemented` External DSS adapter usage is conformance-gated with enforced failover policy in live dispatcher paths (`backend/utm_agent/dss_gateway.py`, `backend/utm_agent/tools.py`, `backend/uav_agent/api_shared.py`).
+9. `implemented` Operational SLO + incident playbook readiness checks are available (`backend/utm_agent/operations_readiness.py`, `docs/operations/*`, `api.py`).
+10. `implemented` Periodic resilience/red-team campaign framework is available (`backend/utm_agent/resilience_campaigns.py`, `api.py`).
+
 ## 6) Immediate Power-Up Backlog for Your Current UTM Agent
 
-1. Implement DSS-style operational intent endpoints and persistence.
-2. Add conflict-resolution policy modes (`reject`, `negotiate`, `conditional_approve`).
-3. Replace stub `reserve_corridor` with intent reservation and lease semantics.
-4. Add subscription notifications (initially internal event bus, then USS-to-USS adapter).
-5. Add signed decision objects and verifier middleware.
-6. Add conformance scenario runner integrated in `backend/test` and CI.
-7. Add compliance artifact export endpoint (`/api/utm/compliance/export`).
+Status (2026-02-27):
+
+1. `implemented` DSS-style operational intent endpoints and persistence are active.
+2. `implemented` Conflict-resolution policy modes (`reject`, `negotiate`, `conditional_approve`) are active.
+3. `implemented` `reserve_corridor` now uses intent reservation with lease/version semantics.
+4. `partial` Subscription notifications are implemented via internal queue/event bus; USS-to-USS callback delivery adapter remains pending.
+5. `partial` Signed DSS intent objects and signature verification are implemented; signed UTM decision objects/verifier middleware for all decision paths remains pending.
+6. `implemented` Conformance scenario runner is integrated in `backend/test` and CI.
+7. `implemented` Compliance artifact export endpoint (`/api/utm/compliance/export`) is active.
 
 ## 7) Module-by-Module Change Plan
 
-1. `backend/utm_agent/service.py`
-- Add 4D intent graph, conflict engine, lease/version semantics.
+Status (2026-02-27):
 
-2. `backend/utm_agent/api.py`
-- Add DSS endpoints, conformance status endpoints, compliance export endpoints.
+1. `implemented` `backend/utm_agent/service.py`
+- 4D intent graph/conflict utilities and lease/version reservation helpers added.
 
-3. `backend/utm_agent/tools.py`
-- Add tools for intent publish/update/query/subscribe and conformance runs.
+2. `implemented` `backend/utm_agent/api.py`
+- DSS endpoints, conformance status endpoints, and compliance export endpoints are active.
 
-4. `backend/uav_agent/api_routes_uav.py`
-- Before approval request, publish/refresh intent and consume conflict result.
+3. `implemented` `backend/utm_agent/tools.py`
+- Intent publish/update/query/subscribe, conformance run, and conformance status tools are active.
 
-5. `backend/uav_agent/api_shared.py`
-- Extend flight gate with DSS conflict and stale-subscription checks.
+4. `implemented` `backend/uav_agent/api_routes_uav.py`
+- Approval path now publishes/refreshes DSS intent and blocks on DSS publish errors/conflicts.
 
-6. `backend/mission_supervisor_agent/watchers.py`
-- Ingest DSS ecosystem status and subscription lag.
+5. `implemented` `backend/uav_agent/api_shared.py`
+- Flight gate now checks DSS conflicts plus stale-subscription/degraded/error states.
 
-7. `backend/mission_supervisor_agent/planner.py`
-- Add mitigation/replan branches for DSS conflict classes.
+6. `implemented` `backend/mission_supervisor_agent/watchers.py`
+- DSS ecosystem status includes conflict classes, subscription staleness, and notification lag.
 
-8. `backend/mission_supervisor_agent/policy.py`
-- Add compliance guardrails by jurisdiction profile.
+7. `implemented` `backend/mission_supervisor_agent/planner.py`
+- Mitigation/replan branches now include DSS conflict-class and lag-aware actions.
 
-9. `backend/mission_supervisor_agent/domain_dispatch.py`
-- Dispatch DSS operations and conformance operations.
+8. `implemented` `backend/mission_supervisor_agent/policy.py`
+- Compliance guardrails keyed by jurisdiction profile are enforced in policy validation.
+
+9. `implemented` `backend/mission_supervisor_agent/domain_dispatch.py`
+- DSS operations and DSS conformance-status observe operations are dispatched.
 
 ## 8) Definition of Done per Phase
 

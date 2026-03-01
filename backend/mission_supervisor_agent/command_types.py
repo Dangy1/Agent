@@ -20,6 +20,8 @@ OBSERVE_OPS: Set[Tuple[str, str]] = {
     ("utm", "dss_query_participants"),
     ("utm", "query_notifications"),
     ("utm", "dss_query_notifications"),
+    ("utm", "conformance_last"),
+    ("utm", "dss_conformance_last"),
     ("network", "health"),
     ("network", "slice_monitor"),
     ("network", "kpm_monitor"),

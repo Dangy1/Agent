@@ -1078,3 +1078,454 @@
 11:47:10 AM [vite] (client) hmr update /src/UavPage.tsx
 11:51:18 AM [vite] (client) hmr update /src/UavPage.tsx
 11:54:35 AM [vite] (client) hmr update /src/UavPage.tsx
+12:39:14 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:39:23 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:39:37 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:39:48 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:39:54 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:40:45 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:40:59 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:41:17 PM [vite] (client) hmr update /src/UtmPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 121 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 121 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+12:45:19 PM [vite] (client) hmr update /src/UtmPage.tsx
+12:45:31 PM [vite] (client) hmr update /src/UtmPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 132 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+2:29:56 PM [vite] (client) hmr update /src/NetworkPage.tsx, /src/UtmPage.tsx, /src/UavPage.tsx
+2:30:33 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:31:09 PM [vite] (client) hmr update /src/UavPage.tsx
+2:31:12 PM [vite] (client) hmr update /src/UavPage.tsx
+2:31:19 PM [vite] (client) hmr update /src/UavPage.tsx
+2:31:56 PM [vite] (client) hmr update /src/UavPage.tsx
+2:32:00 PM [vite] (client) hmr update /src/UavPage.tsx
+2:32:11 PM [vite] (client) hmr update /src/UavPage.tsx
+2:34:40 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:34:49 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:35:01 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:35:19 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:35:22 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:42:17 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:42:32 PM [vite] (client) hmr update /src/UtmPage.tsx
+2:50:15 PM [vite] (client) hmr update /src/UtmPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 121 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+3:12:49 PM [vite] (client) hmr update /src/UavPage.tsx
+3:13:16 PM [vite] (client) hmr update /src/UavPage.tsx
+3:14:38 PM [vite] (client) hmr update /src/UavPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 122 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 119 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 119 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 122 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+3:36:18 PM [vite] (client) hmr update /src/UavPage.tsx
+3:43:41 PM [vite] (client) hmr update /src/UavPage.tsx
+4:11:06 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:18:05 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:18:14 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:18:20 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:18:48 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:22:39 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:22:44 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:22:48 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:23:14 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:23:26 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:26:32 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:27:09 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:30:36 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:30:56 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:32:21 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:07:12 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:13:27 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:13:37 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:14:01 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:14:18 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:24:35 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:24:55 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:26:41 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:30:39 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:30:44 PM [vite] (client) hmr update /src/UavPage.tsx
+5:32:36 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:34:28 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:37:06 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:37:38 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:37:47 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:39:06 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:40:34 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:41:13 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:43:11 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:45:02 PM [vite] (client) hmr update /src/UtmPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 119 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+6:02:00 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:02:07 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:02:19 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:02:50 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:03:17 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:10:57 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:11:10 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:21:27 PM [vite] (client) hmr update /src/UavPage.tsx
+6:26:26 PM [vite] (client) hmr update /src/UavPage.tsx
+6:29:41 PM [vite] (client) hmr update /src/UavPage.tsx
+6:30:00 PM [vite] (client) hmr update /src/UavPage.tsx
+6:32:48 PM [vite] (client) hmr update /src/UavPage.tsx
+6:35:12 PM [vite] (client) hmr update /src/UavPage.tsx
+6:36:05 PM [vite] (client) hmr update /src/UavPage.tsx
+6:38:27 PM [vite] (client) hmr update /src/UavPage.tsx
+6:41:43 PM [vite] (client) hmr update /src/UavPage.tsx
+6:44:25 PM [vite] (client) hmr update /src/UavPage.tsx
+6:46:23 PM [vite] (client) hmr update /src/UavPage.tsx
+6:50:28 PM [vite] (client) hmr update /src/UavPage.tsx
+6:53:19 PM [vite] (client) hmr update /src/UavPage.tsx
+6:55:26 PM [vite] (client) hmr update /src/UavPage.tsx
+7:00:04 PM [vite] (client) hmr update /src/UavPage.tsx
+7:00:26 PM [vite] (client) hmr update /src/UavPage.tsx
+7:00:38 PM [vite] (client) hmr update /src/UavPage.tsx
+7:02:21 PM [vite] (client) hmr update /src/UavPage.tsx
+7:04:44 PM [vite] (client) hmr update /src/UavPage.tsx
+7:06:07 PM [vite] (client) hmr update /src/UavPage.tsx
+7:08:01 PM [vite] (client) hmr update /src/UavPage.tsx
+7:09:14 PM [vite] (client) hmr update /src/UavPage.tsx
+7:14:18 PM [vite] (client) hmr update /src/UavPage.tsx
+7:14:24 PM [vite] (client) hmr update /src/UavPage.tsx
+7:14:38 PM [vite] (client) hmr update /src/UavPage.tsx
+7:14:46 PM [vite] (client) hmr update /src/UavPage.tsx
+7:15:03 PM [vite] (client) hmr update /src/UavPage.tsx
+7:15:12 PM [vite] (client) hmr update /src/UavPage.tsx
+7:15:17 PM [vite] (client) hmr update /src/UavPage.tsx
+7:15:32 PM [vite] (client) hmr update /src/UavPage.tsx
+7:15:36 PM [vite] (client) hmr update /src/UavPage.tsx
+7:16:21 PM [vite] (client) hmr update /src/UavPage.tsx
+7:17:11 PM [vite] (client) hmr update /src/UavPage.tsx
+7:17:20 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:57 PM [vite] (client) hmr update /src/UavPage.tsx
+7:20:12 PM [vite] (client) hmr update /src/UavPage.tsx
+7:22:50 PM [vite] (client) hmr update /src/UavPage.tsx
+7:24:42 PM [vite] (client) hmr update /src/UavPage.tsx
+7:25:41 PM [vite] (client) hmr update /src/UavPage.tsx
+7:26:05 PM [vite] (client) hmr update /src/UavPage.tsx
+7:26:54 PM [vite] (client) hmr update /src/UavPage.tsx
+7:27:29 PM [vite] (client) hmr update /src/UavPage.tsx
+7:29:07 PM [vite] (client) hmr update /src/UavPage.tsx
+7:31:11 PM [vite] (client) hmr update /src/UavPage.tsx
+7:31:17 PM [vite] (client) hmr update /src/UavPage.tsx
+7:31:32 PM [vite] (client) hmr update /src/UavPage.tsx
+7:35:31 PM [vite] (client) hmr update /src/UavPage.tsx
+7:35:35 PM [vite] (client) hmr update /src/UavPage.tsx
+7:35:42 PM [vite] (client) hmr update /src/UavPage.tsx
+7:35:47 PM [vite] (client) hmr update /src/UavPage.tsx
+7:35:53 PM [vite] (client) hmr update /src/UavPage.tsx
+7:37:38 PM [vite] (client) hmr update /src/UavPage.tsx
+7:37:43 PM [vite] (client) hmr update /src/UavPage.tsx
+7:39:39 PM [vite] (client) hmr update /src/UavPage.tsx
+7:39:45 PM [vite] (client) hmr update /src/UavPage.tsx
+7:40:27 PM [vite] (client) hmr update /src/UavPage.tsx
+7:40:29 PM [vite] (client) hmr update /src/UavPage.tsx
+7:40:30 PM [vite] (client) hmr update /src/UavPage.tsx
+7:40:40 PM [vite] (client) hmr update /src/UavPage.tsx
+7:40:41 PM [vite] (client) hmr update /src/UavPage.tsx
+7:40:42 PM [vite] (client) hmr update /src/UavPage.tsx
+7:41:38 PM [vite] (client) hmr update /src/UavPage.tsx
+7:41:47 PM [vite] (client) hmr update /src/UavPage.tsx
+7:43:46 PM [vite] (client) hmr update /src/UavPage.tsx
+4:29:52 PM [vite] (client) hmr update /src/UavPage.tsx
+4:29:58 PM [vite] (client) hmr update /src/UavPage.tsx
+4:30:32 PM [vite] (client) hmr update /src/UavPage.tsx
+4:31:56 PM [vite] (client) hmr update /src/UavPage.tsx
+4:32:01 PM [vite] (client) hmr update /src/UavPage.tsx
+4:32:14 PM [vite] (client) hmr update /src/UavPage.tsx
+4:32:20 PM [vite] (client) hmr update /src/UavPage.tsx
+4:35:12 PM [vite] (client) hmr update /src/UavPage.tsx
+4:35:24 PM [vite] (client) hmr update /src/UavPage.tsx
+4:35:53 PM [vite] (client) hmr update /src/UavPage.tsx
+4:35:59 PM [vite] (client) hmr update /src/UavPage.tsx
+4:36:21 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:25 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:31 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:52 PM [vite] (client) hmr update /src/UavPage.tsx
+4:42:56 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:43:19 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:47:20 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:47:37 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:49:37 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:54:05 PM [vite] (client) hmr update /src/UtmPage.tsx
+4:54:10 PM [vite] (client) hmr update /src/UtmPage.tsx
+5:01:06 PM [vite] (client) hmr update /src/UavPage.tsx
+5:01:20 PM [vite] (client) hmr update /src/UavPage.tsx
+5:05:06 PM [vite] (client) hmr update /src/UavPage.tsx
+5:05:12 PM [vite] (client) hmr update /src/UavPage.tsx
+5:05:26 PM [vite] (client) hmr update /src/UavPage.tsx
+5:06:46 PM [vite] (client) hmr update /src/UavPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 119 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+5:14:40 PM [vite] (client) hmr update /src/UavPage.tsx
+5:15:02 PM [vite] (client) hmr update /src/UavPage.tsx
+5:15:16 PM [vite] (client) hmr update /src/UavPage.tsx
+5:16:09 PM [vite] (client) hmr update /src/UavPage.tsx
+5:16:09 PM [vite] Internal server error: Transform failed with 4 errors:
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:52: ERROR: The character ">" is not valid inside a JSX element
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:71: ERROR: The character ">" is not valid inside a JSX element
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:85: ERROR: The character ">" is not valid inside a JSX element
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:105: ERROR: The character ">" is not valid inside a JSX element
+  Plugin: vite:esbuild
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:3235:0
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                      ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                                         ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                                                       ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                                                                           ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+      at failureErrorWithLog (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:1467:15)
+      at /home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:736:50
+      at responseCallbacks.<computed> (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:603:9)
+      at handleIncomingPacket (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:658:12)
+      at Socket.readFromStdout (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:581:7)
+      at Socket.emit (node:events:524:28)
+      at addChunk (node:internal/streams/readable:561:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+      at Readable.push (node:internal/streams/readable:392:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:191:23)
+5:16:34 PM [vite] (client) hmr update /src/UavPage.tsx
+5:16:34 PM [vite] Internal server error: Transform failed with 4 errors:
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:52: ERROR: The character ">" is not valid inside a JSX element
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:71: ERROR: The character ">" is not valid inside a JSX element
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:85: ERROR: The character ">" is not valid inside a JSX element
+/home/dang/agent_test/frontend/src/UavPage.tsx:3235:105: ERROR: The character ">" is not valid inside a JSX element
+  Plugin: vite:esbuild
+  File: /home/dang/agent_test/frontend/src/UavPage.tsx:3235:0
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                      ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                                         ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                                                       ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+  The character ">" is not valid inside a JSX element
+  3233 |                </div>
+  3234 |                <div style={{ fontSize: 11, color: "#667085" }}>
+  3235 |                  Step order on submit: route checks -> geofence submit -> UTM verify -> approval request -> DSS publish
+       |                                                                                                           ^
+  3236 |                </div>
+  3237 |                <div style={{ display: "grid", gap: 6 }}>
+  
+      at failureErrorWithLog (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:1467:15)
+      at /home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:736:50
+      at responseCallbacks.<computed> (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:603:9)
+      at handleIncomingPacket (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:658:12)
+      at Socket.readFromStdout (/home/dang/agent_test/frontend/node_modules/esbuild/lib/main.js:581:7)
+      at Socket.emit (node:events:524:28)
+      at addChunk (node:internal/streams/readable:561:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+      at Readable.push (node:internal/streams/readable:392:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:191:23)
+5:16:40 PM [vite] (client) hmr update /src/UavPage.tsx
+5:17:15 PM [vite] (client) hmr update /src/UavPage.tsx
+5:17:37 PM [vite] (client) hmr update /src/UavPage.tsx
+5:21:55 PM [vite] (client) hmr update /src/UavPage.tsx
+5:22:09 PM [vite] (client) hmr update /src/UavPage.tsx
+5:22:22 PM [vite] (client) hmr update /src/UavPage.tsx
+5:25:13 PM [vite] (client) hmr update /src/UavPage.tsx
+5:25:24 PM [vite] (client) hmr update /src/UavPage.tsx
+5:30:12 PM [vite] (client) hmr update /src/UavPage.tsx
+5:33:28 PM [vite] (client) hmr update /src/UavPage.tsx
+5:35:56 PM [vite] (client) hmr update /src/UavPage.tsx
+5:36:03 PM [vite] (client) hmr update /src/UavPage.tsx
+5:37:03 PM [vite] (client) hmr update /src/UavPage.tsx
+5:37:23 PM [vite] (client) hmr update /src/UavPage.tsx
+5:40:40 PM [vite] (client) hmr update /src/UavPage.tsx
+5:42:54 PM [vite] (client) hmr update /src/UavPage.tsx
+5:46:25 PM [vite] (client) hmr update /src/UavPage.tsx
+5:54:33 PM [vite] (client) hmr update /src/UavPage.tsx
+5:54:37 PM [vite] (client) hmr update /src/UavPage.tsx
+6:08:28 PM [vite] (client) hmr update /src/UavPage.tsx
+6:08:49 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:09:05 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:09:12 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:24:40 PM [vite] (client) hmr update /src/UavPage.tsx
+6:24:47 PM [vite] (client) hmr update /src/UtmPage.tsx
+6:43:12 PM [vite] (client) hmr update /src/UavPage.tsx
+6:43:19 PM [vite] (client) hmr update /src/UtmPage.tsx
+7:01:59 PM [vite] (client) hmr update /src/UavPage.tsx
+7:02:04 PM [vite] (client) hmr update /src/UavPage.tsx
+7:02:29 PM [vite] (client) hmr update /src/UavPage.tsx
+7:02:35 PM [vite] (client) hmr update /src/UavPage.tsx
+7:03:00 PM [vite] (client) hmr update /src/UavPage.tsx
+7:03:56 PM [vite] (client) hmr update /src/UavPage.tsx
+7:04:06 PM [vite] (client) hmr update /src/UavPage.tsx
+7:06:15 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:10 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:14 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:19 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:26 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:35 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:39 PM [vite] (client) hmr update /src/UavPage.tsx
+7:18:49 PM [vite] (client) hmr update /src/UavPage.tsx
+7:19:07 PM [vite] (client) hmr update /src/UavPage.tsx
+7:20:43 PM [vite] (client) hmr update /src/UavPage.tsx
+7:23:08 PM [vite] (client) hmr update /src/UavPage.tsx
+7:23:12 PM [vite] (client) hmr update /src/UavPage.tsx
+7:23:47 PM [vite] (client) hmr update /src/UavPage.tsx
+7:24:02 PM [vite] (client) hmr update /src/UavPage.tsx
+7:25:44 PM [vite] (client) hmr update /src/UavPage.tsx
+7:27:01 PM [vite] (client) hmr update /src/UavPage.tsx
+7:35:32 PM [vite] (client) hmr update /src/UavPage.tsx
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 120 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+  ➜  Network: http://172.18.0.1:5173/
+
+> frontend@0.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  VITE v7.3.1  ready in 153 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.88.224:5173/
+  ➜  Network: http://192.168.70.129:5173/
+  ➜  Network: http://172.18.0.1:5173/

@@ -17,6 +17,17 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _parse_utc_dt(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
 def _ctx(state: MissionState) -> Dict[str, Any]:
     mission = state.get("mission") or {}
     metadata = mission.get("metadata") if isinstance(mission, dict) else {}
@@ -102,13 +113,58 @@ def refresh_utm_state(state: MissionState) -> MissionState:
         waypoints = list(uav.get("waypoints") or []) if isinstance(uav, dict) else []
         dss_intents_raw = _UTM_DB.get_state("dss_operational_intents")
         dss_intents = dss_intents_raw if isinstance(dss_intents_raw, dict) else {}
+        dss_subs_raw = _UTM_DB.get_state("dss_subscriptions")
+        dss_subs = dss_subs_raw if isinstance(dss_subs_raw, dict) else {}
+        dss_notifications_raw = _UTM_DB.get_state("dss_notifications")
+        dss_notifications = dss_notifications_raw if isinstance(dss_notifications_raw, list) else []
+
+        now = datetime.now(timezone.utc)
         dss_blocking = 0
+        dss_advisory = 0
+        dss_self_overlap = 0
         for rec in dss_intents.values():
             if not isinstance(rec, dict):
                 continue
             summary = rec.get("conflict_summary")
-            if isinstance(summary, dict) and int(summary.get("blocking", 0) or 0) > 0:
+            if not isinstance(summary, dict):
+                continue
+            if int(summary.get("blocking", 0) or 0) > 0:
                 dss_blocking += 1
+            if int(summary.get("advisory", 0) or 0) > 0:
+                dss_advisory += 1
+            if int(summary.get("self_overlap", 0) or 0) > 0:
+                dss_self_overlap += 1
+
+        expired_subscriptions = 0
+        stale_subscriptions = 0
+        for rec in dss_subs.values():
+            if not isinstance(rec, dict):
+                continue
+            expires = _parse_utc_dt(rec.get("expires_at"))
+            updated = _parse_utc_dt(rec.get("updated_at"))
+            if isinstance(expires, datetime) and expires < now:
+                expired_subscriptions += 1
+            if isinstance(updated, datetime) and (now - updated).total_seconds() > 900:
+                stale_subscriptions += 1
+
+        pending_notification_count = 0
+        pending_notification_lag_sec_max = 0.0
+        for rec in dss_notifications:
+            if not isinstance(rec, dict):
+                continue
+            if str(rec.get("status", "")).strip().lower() != "pending":
+                continue
+            pending_notification_count += 1
+            created = _parse_utc_dt(rec.get("created_at"))
+            if isinstance(created, datetime):
+                lag = (now - created).total_seconds()
+                pending_notification_lag_sec_max = max(pending_notification_lag_sec_max, max(0.0, lag))
+
+        subscription_stale = bool(
+            expired_subscriptions > 0
+            or stale_subscriptions > 0
+            or pending_notification_lag_sec_max > 180.0
+        )
         utm_snap = {
             "airspace_segment": c["airspace_segment"],
             "weather": UTM_SERVICE.get_weather(c["airspace_segment"]),
@@ -121,7 +177,15 @@ def refresh_utm_state(state: MissionState) -> MissionState:
             "approvals_store": dict(UTM_SERVICE.approvals),
             "dss": {
                 "operational_intent_count": len(dss_intents),
+                "subscription_count": len(dss_subs),
+                "pending_notification_count": pending_notification_count,
+                "pending_notification_lag_sec_max": round(pending_notification_lag_sec_max, 3),
+                "expired_subscription_count": expired_subscriptions,
+                "stale_subscription_count": stale_subscriptions,
                 "blocking_conflict_count": dss_blocking,
+                "advisory_conflict_count": dss_advisory,
+                "self_overlap_conflict_count": dss_self_overlap,
+                "subscription_stale": subscription_stale,
             },
         }
         severe = []
@@ -135,6 +199,8 @@ def refresh_utm_state(state: MissionState) -> MissionState:
             severe.append("license")
         if dss_blocking > 0:
             severe.append("dss_blocking_conflicts")
+        if subscription_stale:
+            severe.append("dss_subscription_stale")
         events = _append_event(
             state,
             "utm_state_refreshed",
@@ -202,6 +268,10 @@ def ingest_events(state: MissionState) -> MissionState:
         dss = utm.get("dss")
         if isinstance(dss, dict) and int(dss.get("blocking_conflict_count", 0) or 0) > 0:
             warnings.append("utm_dss_blocking_conflicts")
+        if isinstance(dss, dict) and bool(dss.get("subscription_stale")):
+            warnings.append("utm_dss_subscription_stale")
+        if isinstance(dss, dict) and float(dss.get("pending_notification_lag_sec_max", 0.0) or 0.0) > 180.0:
+            warnings.append("utm_dss_notification_lag")
     if isinstance(net, dict):
         kpis = net.get("networkKpis")
         if isinstance(kpis, dict):

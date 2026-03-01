@@ -1,0 +1,3 @@
+[submodule "backend/airspace_faa/vendor/postgis"]
+	path = backend/airspace_faa/vendor/postgis
+	url = https://github.com/postgis/postgis.git

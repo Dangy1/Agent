@@ -1,0 +1,506 @@
+{
+  "pack_id": "cert-dbfa290ac240",
+  "generated_at": "2026-02-27T12:34:15.303398Z",
+  "release_id": "release-local",
+  "candidate_version": "0.1.0-aligned",
+  "jurisdiction_profile": {
+    "profile_id": "eu_ussp_2021_664",
+    "name": "EU U-space USSP (Reg. 2021/664)",
+    "version": "2026.1",
+    "effective_date": "2026-01-01",
+    "source_path": "/home/dang/agent_test/profiles/eu_ussp_2021_664.yaml"
+  },
+  "summary": {
+    "total_claims": 17,
+    "supported_claims": 16,
+    "partial_claims": 1,
+    "gap_claims": 0,
+    "critical_findings": 0,
+    "conformance_passed": true,
+    "missing_approvals": [],
+    "release_ready": true
+  },
+  "safety_case": {
+    "claims": [
+      {
+        "claim_id": "claim-utm-dss-a-001",
+        "requirement_id": "UTM-DSS-A-001",
+        "phase": "MVP",
+        "status": "supported",
+        "statement": "Operational intent lifecycle APIs support create, query, update, and delete semantics."
+      },
+      {
+        "claim_id": "claim-utm-dss-a-002",
+        "requirement_id": "UTM-DSS-A-002",
+        "phase": "MVP",
+        "status": "supported",
+        "statement": "Subscription CRUD and overlap query semantics are available for DSS-style notifications."
+      },
+      {
+        "claim_id": "claim-utm-dss-a-003",
+        "requirement_id": "UTM-DSS-A-003",
+        "phase": "MVP",
+        "status": "supported",
+        "statement": "Strategic conflict checks on 4D overlap enforce deterministic reject/negotiate/conditional_approve behavior."
+      },
+      {
+        "claim_id": "claim-utm-dss-a-004",
+        "requirement_id": "UTM-DSS-A-004",
+        "phase": "MVP",
+        "status": "supported",
+        "statement": "Mission supervisor ingests DSS conflict indicators and can transition to mitigation."
+      },
+      {
+        "claim_id": "claim-utm-dss-a-005",
+        "requirement_id": "UTM-DSS-A-005",
+        "phase": "MVP",
+        "status": "partial",
+        "statement": "Corridor reservation uses intent leasing semantics compatible with strategic deconfliction."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-001",
+        "requirement_id": "UTM-DSS-B-001",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "RTM exists and maps requirements to code paths, tests, and evidence IDs."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-002",
+        "requirement_id": "UTM-DSS-B-002",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "Automated conformance scenarios execute consistently and are suitable for CI gating."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-003",
+        "requirement_id": "UTM-DSS-B-003",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "Evidence pipeline uses immutable event IDs and correlation IDs across UTM decisions."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-004",
+        "requirement_id": "UTM-DSS-B-004",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "Compliance artifact export endpoint is available for release evidence packaging."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-005",
+        "requirement_id": "UTM-DSS-B-005",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "Service-to-service authentication and authorization are enforced for UTM/DSS APIs."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-006",
+        "requirement_id": "UTM-DSS-B-006",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "Intent object signature verification is cryptographically validated."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-007",
+        "requirement_id": "UTM-DSS-B-007",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "Key rotation policy and trust-store configuration are implemented."
+      },
+      {
+        "claim_id": "claim-utm-dss-b-008",
+        "requirement_id": "UTM-DSS-B-008",
+        "phase": "Pre-Cert",
+        "status": "supported",
+        "statement": "Degraded mode behavior is explicit when DSS peers are unavailable."
+      },
+      {
+        "claim_id": "claim-utm-dss-c-001",
+        "requirement_id": "UTM-DSS-C-001",
+        "phase": "Cert",
+        "status": "supported",
+        "statement": "Jurisdiction profiles are available for FAA NTAP, EU USSP, and ICAO alignment."
+      },
+      {
+        "claim_id": "claim-utm-dss-c-002",
+        "requirement_id": "UTM-DSS-C-002",
+        "phase": "Cert",
+        "status": "supported",
+        "statement": "Machine-generated certification package links claims to evidence."
+      },
+      {
+        "claim_id": "claim-utm-dss-c-003",
+        "requirement_id": "UTM-DSS-C-003",
+        "phase": "Cert",
+        "status": "supported",
+        "statement": "Operational SLOs and incident playbook readiness are evaluated before pilot operations."
+      },
+      {
+        "claim_id": "claim-utm-dss-c-004",
+        "requirement_id": "UTM-DSS-C-004",
+        "phase": "Cert",
+        "status": "supported",
+        "statement": "Periodic resilience campaigns capture red-team and failure-injection outcomes."
+      }
+    ],
+    "critical_findings": []
+  },
+  "cyber_controls": {
+    "controls": [
+      {
+        "control_id": "EU-CY-01",
+        "description": "Operational intent and subscription exchanges are monitored and auditable.",
+        "required_evidence_ids": [
+          "dss_upsert_operational_intent",
+          "dss_upsert_subscription"
+        ],
+        "matched_evidence_ids": [
+          "dss_upsert_operational_intent",
+          "dss_upsert_subscription"
+        ],
+        "status": "implemented"
+      },
+      {
+        "control_id": "EU-CY-02",
+        "description": "Conformance evidence is generated and retained for oversight.",
+        "required_evidence_ids": [
+          "dss_run_local_conformance",
+          "compliance_export"
+        ],
+        "matched_evidence_ids": [
+          "dss_run_local_conformance",
+          "compliance_export"
+        ],
+        "status": "implemented"
+      }
+    ]
+  },
+  "incident_process": {
+    "required_artifacts": [
+      "occurrence_reporting_process",
+      "service_restoration_process",
+      "authority_notification_sop"
+    ]
+  },
+  "continuity": {
+    "availability_slo_pct": 99.5,
+    "decision_latency_ms_p95": 700,
+    "recovery_time_objective_min": 90,
+    "degraded_mode_required": true
+  },
+  "software_assurance": {
+    "required_artifacts": [
+      "configuration_baseline",
+      "release_approval_record",
+      "test_traceability_report"
+    ]
+  },
+  "governance": {
+    "required_approvals": [
+      "safety",
+      "security",
+      "compliance",
+      "operations"
+    ],
+    "provided_approvals": [
+      {
+        "role": "safety",
+        "approver": "utm-automation",
+        "status": "approved",
+        "note": "Generated alignment record for UTM baseline"
+      },
+      {
+        "role": "security",
+        "approver": "utm-automation",
+        "status": "approved",
+        "note": "Generated alignment record for UTM baseline"
+      },
+      {
+        "role": "compliance",
+        "approver": "utm-automation",
+        "status": "approved",
+        "note": "Generated alignment record for UTM baseline"
+      },
+      {
+        "role": "operations",
+        "approver": "utm-automation",
+        "status": "approved",
+        "note": "Generated alignment record for UTM baseline"
+      }
+    ],
+    "missing_approvals": []
+  },
+  "evidence_index": {
+    "claims_to_evidence": [
+      {
+        "claim_id": "claim-utm-dss-a-001",
+        "requirement_id": "UTM-DSS-A-001",
+        "required_evidence_ids": [
+          "dss_upsert_operational_intent",
+          "dss_delete_operational_intent"
+        ],
+        "matched_evidence_ids": [
+          "dss_upsert_operational_intent",
+          "dss_delete_operational_intent"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-a-002",
+        "requirement_id": "UTM-DSS-A-002",
+        "required_evidence_ids": [
+          "dss_upsert_subscription",
+          "dss_delete_subscription"
+        ],
+        "matched_evidence_ids": [
+          "dss_upsert_subscription",
+          "dss_delete_subscription"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-a-003",
+        "requirement_id": "UTM-DSS-A-003",
+        "required_evidence_ids": [
+          "request_approval_blocked_dss_conflict"
+        ],
+        "matched_evidence_ids": [
+          "request_approval_blocked_dss_conflict"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-a-004",
+        "requirement_id": "UTM-DSS-A-004",
+        "required_evidence_ids": [
+          "mission_watchers_ingested"
+        ],
+        "matched_evidence_ids": [
+          "mission_watchers_ingested"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-a-005",
+        "requirement_id": "UTM-DSS-A-005",
+        "required_evidence_ids": [
+          "reserve_corridor"
+        ],
+        "matched_evidence_ids": [
+          "reserve_corridor"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-001",
+        "requirement_id": "UTM-DSS-B-001",
+        "required_evidence_ids": [
+          "compliance_export"
+        ],
+        "matched_evidence_ids": [
+          "compliance_export"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-002",
+        "requirement_id": "UTM-DSS-B-002",
+        "required_evidence_ids": [
+          "dss_run_local_conformance"
+        ],
+        "matched_evidence_ids": [
+          "dss_run_local_conformance"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-003",
+        "requirement_id": "UTM-DSS-B-003",
+        "required_evidence_ids": [
+          "compliance_export",
+          "dss_upsert_operational_intent",
+          "mission_command_dispatched",
+          "mission_command_completed"
+        ],
+        "matched_evidence_ids": [
+          "compliance_export",
+          "dss_upsert_operational_intent",
+          "mission_command_dispatched",
+          "mission_command_completed"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-004",
+        "requirement_id": "UTM-DSS-B-004",
+        "required_evidence_ids": [
+          "compliance_export"
+        ],
+        "matched_evidence_ids": [
+          "compliance_export"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-005",
+        "requirement_id": "UTM-DSS-B-005",
+        "required_evidence_ids": [
+          "security_upsert_service_token",
+          "dss_upsert_operational_intent"
+        ],
+        "matched_evidence_ids": [
+          "security_upsert_service_token",
+          "dss_upsert_operational_intent"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-006",
+        "requirement_id": "UTM-DSS-B-006",
+        "required_evidence_ids": [
+          "dss_upsert_operational_intent"
+        ],
+        "matched_evidence_ids": [
+          "dss_upsert_operational_intent"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-007",
+        "requirement_id": "UTM-DSS-B-007",
+        "required_evidence_ids": [
+          "security_rotate_signing_key",
+          "security_register_peer_key"
+        ],
+        "matched_evidence_ids": [
+          "security_rotate_signing_key",
+          "security_register_peer_key"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-b-008",
+        "requirement_id": "UTM-DSS-B-008",
+        "required_evidence_ids": [
+          "dss_run_local_conformance",
+          "dss_upsert_operational_intent"
+        ],
+        "matched_evidence_ids": [
+          "dss_run_local_conformance",
+          "dss_upsert_operational_intent"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-c-001",
+        "requirement_id": "UTM-DSS-C-001",
+        "required_evidence_ids": [
+          "certification_pack_generate"
+        ],
+        "matched_evidence_ids": [
+          "certification_pack_generate"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-c-002",
+        "requirement_id": "UTM-DSS-C-002",
+        "required_evidence_ids": [
+          "certification_pack_generate"
+        ],
+        "matched_evidence_ids": [
+          "certification_pack_generate"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-c-003",
+        "requirement_id": "UTM-DSS-C-003",
+        "required_evidence_ids": [
+          "operations_readiness_evaluate"
+        ],
+        "matched_evidence_ids": [
+          "operations_readiness_evaluate"
+        ],
+        "evidence_complete": true
+      },
+      {
+        "claim_id": "claim-utm-dss-c-004",
+        "requirement_id": "UTM-DSS-C-004",
+        "required_evidence_ids": [
+          "resilience_campaign_start",
+          "resilience_campaign_run"
+        ],
+        "matched_evidence_ids": [
+          "resilience_campaign_start",
+          "resilience_campaign_run"
+        ],
+        "evidence_complete": true
+      }
+    ],
+    "evidence_log_size": 18,
+    "evidence_ids": [
+      "certification_pack_generate",
+      "compliance_export",
+      "dss_delete_operational_intent",
+      "dss_delete_subscription",
+      "dss_run_local_conformance",
+      "dss_upsert_operational_intent",
+      "dss_upsert_subscription",
+      "mission_command_completed",
+      "mission_command_dispatched",
+      "mission_watchers_ingested",
+      "operations_readiness_evaluate",
+      "request_approval_blocked_dss_conflict",
+      "reserve_corridor",
+      "resilience_campaign_run",
+      "resilience_campaign_start",
+      "security_register_peer_key",
+      "security_rotate_signing_key",
+      "security_upsert_service_token"
+    ]
+  },
+  "notes": "Generated from profile + RTM baseline for operator-facing certification alignment",
+  "generation_context": {
+    "tool": "backend/utm_agent/generate_certification_documents.py",
+    "generated_at": "2026-02-27T12:34:15.302720Z",
+    "rtm_path": "docs/compliance/rtm.yaml",
+    "profile_source_path": "/home/dang/agent_test/profiles/eu_ussp_2021_664.yaml"
+  },
+  "profile_artifacts": [
+    {
+      "artifact_id": "authority_notification_sop",
+      "path": "docs/operations/authority_notification_sop.md",
+      "present": true
+    },
+    {
+      "artifact_id": "configuration_baseline",
+      "path": "docs/operations/configuration_baseline.md",
+      "present": false
+    },
+    {
+      "artifact_id": "occurrence_reporting_process",
+      "path": "docs/operations/occurrence_reporting_process.md",
+      "present": true
+    },
+    {
+      "artifact_id": "release_approval_record",
+      "path": "docs/operations/release_approval_record.md",
+      "present": false
+    },
+    {
+      "artifact_id": "service_restoration_process",
+      "path": "docs/operations/service_restoration_process.md",
+      "present": true
+    },
+    {
+      "artifact_id": "test_traceability_report",
+      "path": "docs/operations/test_traceability_report.md",
+      "present": false
+    },
+    {
+      "artifact_id": "continuity_profile",
+      "path": "profile:eu_ussp_2021_664",
+      "present": true
+    }
+  ]
+}

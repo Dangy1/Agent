@@ -24,6 +24,8 @@ def _default_db_path() -> str:
 
 
 DB_PATH = os.getenv("AGENT_STATE_DB_PATH", _default_db_path())
+_SCHEMA_BASELINE_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 def _connect() -> sqlite3.Connection:
@@ -34,35 +36,91 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _ensure_base_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS agent_meta (
+          agent TEXT PRIMARY KEY,
+          revision INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS agent_state (
+          agent TEXT NOT NULL,
+          state_key TEXT NOT NULL,
+          value_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (agent, state_key)
+        );
+        CREATE TABLE IF NOT EXISTS agent_actions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent TEXT NOT NULL,
+          action TEXT NOT NULL,
+          entity_id TEXT,
+          payload_json TEXT,
+          result_json TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS agent_schema (
+          singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+          version INTEGER NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        """
+    )
+
+
+def _get_schema_version(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT version FROM agent_schema WHERE singleton_id = 1").fetchone()
+    if row is None:
+        # Existing deployments prior to schema versioning are baseline version 1.
+        conn.execute(
+            "INSERT INTO agent_schema(singleton_id, version, updated_at) VALUES (1, ?, ?)",
+            (_SCHEMA_BASELINE_VERSION, _utc_now()),
+        )
+        return _SCHEMA_BASELINE_VERSION
+    try:
+        return int(row["version"])
+    except Exception:
+        return _SCHEMA_BASELINE_VERSION
+
+
+def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
+    now = _utc_now()
+    conn.execute(
+        """
+        INSERT INTO agent_schema(singleton_id, version, updated_at)
+        VALUES (1, ?, ?)
+        ON CONFLICT(singleton_id) DO UPDATE SET version = excluded.version, updated_at = excluded.updated_at
+        """,
+        (int(version), now),
+    )
+
+
+def _apply_migration(conn: sqlite3.Connection, *, to_version: int) -> None:
+    if to_version == 2:
+        conn.executescript(
+            """
+            CREATE INDEX IF NOT EXISTS idx_agent_state_agent_updated_at
+              ON agent_state(agent, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_agent_actions_agent_created_at
+              ON agent_actions(agent, created_at);
+            """
+        )
+        return
+    raise RuntimeError(f"Unsupported DB schema migration target: {to_version}")
+
+
 def _ensure_schema() -> None:
     with _LOCK:
         conn = _connect()
         try:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS agent_meta (
-                  agent TEXT PRIMARY KEY,
-                  revision INTEGER NOT NULL DEFAULT 0,
-                  updated_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS agent_state (
-                  agent TEXT NOT NULL,
-                  state_key TEXT NOT NULL,
-                  value_json TEXT NOT NULL,
-                  updated_at TEXT NOT NULL,
-                  PRIMARY KEY (agent, state_key)
-                );
-                CREATE TABLE IF NOT EXISTS agent_actions (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  agent TEXT NOT NULL,
-                  action TEXT NOT NULL,
-                  entity_id TEXT,
-                  payload_json TEXT,
-                  result_json TEXT,
-                  created_at TEXT NOT NULL
-                );
-                """
-            )
+            _ensure_base_schema(conn)
+            current = _get_schema_version(conn)
+            while current < _SCHEMA_VERSION:
+                next_version = current + 1
+                _apply_migration(conn, to_version=next_version)
+                _set_schema_version(conn, next_version)
+                current = next_version
             conn.commit()
         finally:
             conn.close()
@@ -132,6 +190,18 @@ class AgentDB:
             finally:
                 conn.close()
 
+    def delete_state(self, key: str) -> None:
+        with _LOCK:
+            conn = _connect()
+            try:
+                conn.execute(
+                    "DELETE FROM agent_state WHERE agent = ? AND state_key = ?",
+                    (self.agent, key),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
     def recent_actions(self, limit: int = 20) -> List[Dict[str, Any]]:
         lim = max(1, min(100, int(limit)))
         with _LOCK:
@@ -193,4 +263,3 @@ class AgentDB:
                 }
             finally:
                 conn.close()
-
