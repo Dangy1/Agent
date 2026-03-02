@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -16,6 +16,18 @@ type MissionEvent = {
   data?: JsonRecord;
 };
 
+type SequenceMessage = {
+  from: string;
+  to: string;
+  label: string;
+  replayed: boolean;
+};
+
+type SequenceModel = {
+  participants: string[];
+  messages: SequenceMessage[];
+};
+
 function isObject(x: unknown): x is JsonRecord {
   return typeof x === "object" && x !== null;
 }
@@ -26,6 +38,19 @@ function asRecord(x: unknown): JsonRecord | null {
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
+}
+
+function parseHttpErrorText(raw: string, fallback: string): string {
+  const text = raw.trim();
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const rec = asRecord(parsed);
+    if (rec && typeof rec.detail === "string" && rec.detail.trim()) return rec.detail.trim();
+  } catch {
+    // Keep plain text response when not JSON.
+  }
+  return text;
 }
 
 function fmtTs(value: unknown): string {
@@ -104,6 +129,133 @@ function renderList(items: unknown[], emptyLabel: string) {
   );
 }
 
+function parseMermaidSequence(mermaidText: string): SequenceModel {
+  const participants: string[] = [];
+  const aliasToName = new Map<string, string>();
+  const messages: SequenceMessage[] = [];
+  const lines = mermaidText
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (line.startsWith("participant ")) {
+      const body = line.slice("participant ".length).trim();
+      const asMatch = body.match(/^([A-Za-z0-9_.-]+)\s+as\s+(.+)$/);
+      if (asMatch) {
+        const alias = asMatch[1];
+        const name = asMatch[2].trim();
+        aliasToName.set(alias, name);
+        if (!participants.includes(name)) participants.push(name);
+        continue;
+      }
+      const token = body.split(/\s+/g)[0];
+      if (token) {
+        aliasToName.set(token, token);
+        if (!participants.includes(token)) participants.push(token);
+      }
+      continue;
+    }
+
+    const messageMatch = line.match(/^([A-Za-z0-9_.-]+)\s*(-{1,2}>>)\s*([A-Za-z0-9_.-]+)\s*:\s*(.+)$/);
+    if (!messageMatch) continue;
+    const fromAlias = messageMatch[1];
+    const arrow = messageMatch[2];
+    const toAlias = messageMatch[3];
+    const label = messageMatch[4].trim();
+    const from = aliasToName.get(fromAlias) ?? fromAlias;
+    const to = aliasToName.get(toAlias) ?? toAlias;
+    if (!participants.includes(from)) participants.push(from);
+    if (!participants.includes(to)) participants.push(to);
+    messages.push({
+      from,
+      to,
+      label,
+      replayed: arrow === "-->>" || /\[[^\]]*replayed[^\]]*\]/i.test(label),
+    });
+  }
+
+  return { participants, messages };
+}
+
+function SequenceDiagram({ mermaidText }: { mermaidText: string }) {
+  const model = useMemo(() => parseMermaidSequence(mermaidText), [mermaidText]);
+  const participants = model.participants;
+  const messages = model.messages;
+
+  if (!mermaidText.trim()) {
+    return <div style={{ color: "#667085", fontSize: 13 }}>No protocol trace yet</div>;
+  }
+  if (!participants.length || !messages.length) {
+    return <div style={{ color: "#667085", fontSize: 13 }}>Protocol trace has no message flow yet</div>;
+  }
+
+  const laneGap = 220;
+  const width = participants.length <= 1 ? 760 : Math.max(760, (participants.length - 1) * laneGap + 160);
+  const xForIndex = (idx: number) => (participants.length <= 1 ? Math.floor(width / 2) : 80 + idx * laneGap);
+  const height = Math.max(180, 120 + messages.length * 56);
+  const laneTop = 38;
+  const laneBottom = height - 24;
+
+  return (
+    <div style={{ overflowX: "auto", border: "1px solid #eaecf0", borderRadius: 10, background: "#fcfcfd" }}>
+      <svg width={width} height={height} role="img" aria-label="A2A sequence diagram">
+        {participants.map((name, idx) => {
+          const x = xForIndex(idx);
+          return (
+            <g key={name}>
+              <line x1={x} y1={laneTop} x2={x} y2={laneBottom} stroke="#d0d5dd" strokeDasharray="4 4" strokeWidth={1} />
+              <rect x={x - 72} y={8} width={144} height={24} rx={7} fill="#eef4ff" stroke="#b2ccff" />
+              <text x={x} y={24} textAnchor="middle" fontSize={12} fill="#0c2b73" fontWeight={600}>
+                {name}
+              </text>
+            </g>
+          );
+        })}
+
+        {messages.map((msg, idx) => {
+          const fromIdx = participants.indexOf(msg.from);
+          const toIdx = participants.indexOf(msg.to);
+          const x1 = xForIndex(fromIdx >= 0 ? fromIdx : 0);
+          const x2 = xForIndex(toIdx >= 0 ? toIdx : 0);
+          const y = 66 + idx * 56;
+          const stroke = msg.replayed ? "#98a2b3" : "#155eef";
+          const dash = msg.replayed ? "6 4" : undefined;
+          const labelColor = msg.replayed ? "#667085" : "#1d2939";
+
+          if (x1 === x2) {
+            const loopWidth = 26;
+            const loopHeight = 16;
+            const path = `M ${x1} ${y} C ${x1 + loopWidth} ${y}, ${x1 + loopWidth} ${y + loopHeight}, ${x1} ${y + loopHeight}`;
+            const arrow = `${x1},${y + loopHeight} ${x1 + 8},${y + loopHeight - 4} ${x1 + 8},${y + loopHeight + 4}`;
+            return (
+              <g key={`${msg.from}-${msg.to}-${idx}`}>
+                <path d={path} fill="none" stroke={stroke} strokeWidth={2} strokeDasharray={dash} />
+                <polygon points={arrow} fill={stroke} />
+                <text x={x1 + loopWidth + 10} y={y + loopHeight / 2 + 4} fontSize={11} fill={labelColor}>
+                  {msg.label}
+                </text>
+              </g>
+            );
+          }
+
+          const arrowPoints =
+            x2 >= x1 ? `${x2},${y} ${x2 - 8},${y - 4} ${x2 - 8},${y + 4}` : `${x2},${y} ${x2 + 8},${y - 4} ${x2 + 8},${y + 4}`;
+          return (
+            <g key={`${msg.from}-${msg.to}-${idx}`}>
+              <line x1={x1} y1={y} x2={x2} y2={y} stroke={stroke} strokeWidth={2} strokeDasharray={dash} />
+              <polygon points={arrowPoints} fill={stroke} />
+              <text x={(x1 + x2) / 2} y={y - 8} textAnchor="middle" fontSize={11} fill={labelColor}>
+                {msg.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 export function MissionSupervisorPage() {
   const [apiBase, setApiBase] = useState("http://127.0.0.1:8023");
   const [requestText, setRequestText] = useState("Coordinate UAV and UTM preflight approval, then optimize network coverage for route.");
@@ -112,6 +264,8 @@ export function MissionSupervisorPage() {
   const [selectedMissionId, setSelectedMissionId] = useState<string>("");
   const [stateSnapshot, setStateSnapshot] = useState<JsonRecord | null>(null);
   const [events, setEvents] = useState<MissionEvent[]>([]);
+  const [protocolMermaid, setProtocolMermaid] = useState("");
+  const [protocolMermaidError, setProtocolMermaidError] = useState("");
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState("Mission supervisor UI ready");
   const [errorMsg, setErrorMsg] = useState("");
@@ -147,15 +301,20 @@ export function MissionSupervisorPage() {
     if (!missionId) return;
     try {
       const base = normalizeBaseUrl(apiBase);
-      const [stateRes, eventsRes] = await Promise.all([
+      const [stateRes, eventsRes, mermaidRes] = await Promise.all([
         fetch(`${base}/api/mission/${encodeURIComponent(missionId)}/state`),
         fetch(`${base}/api/mission/${encodeURIComponent(missionId)}/events?limit=200`),
+        fetch(`${base}/api/mission/${encodeURIComponent(missionId)}/protocol-trace/mermaid?limit=500&include_replayed=true`),
       ]);
       const stateData = (await stateRes.json()) as unknown;
       const eventsData = (await eventsRes.json()) as unknown;
+      const mermaidText = await mermaidRes.text();
       if (!stateRes.ok) throw new Error(String(asRecord(stateData)?.detail ?? "Mission state request failed"));
       if (!eventsRes.ok) throw new Error(String(asRecord(eventsData)?.detail ?? "Mission events request failed"));
+      if (!mermaidRes.ok) throw new Error(parseHttpErrorText(mermaidText, "Mission protocol trace request failed"));
       setStateSnapshot(asRecord(asRecord(stateData)?.result));
+      setProtocolMermaid(mermaidText);
+      setProtocolMermaidError("");
       const result = asRecord(asRecord(eventsData)?.result);
       const rows = readArray(result?.events)
         .map((ev) => asRecord(ev))
@@ -169,6 +328,7 @@ export function MissionSupervisorPage() {
         );
       setEvents(rows);
     } catch (e) {
+      setProtocolMermaidError(e instanceof Error ? e.message : String(e));
       setErrorMsg(e instanceof Error ? e.message : String(e));
     }
   };
@@ -403,6 +563,34 @@ export function MissionSupervisorPage() {
               <div style={{ fontSize: 14, fontWeight: 700 }}>Policy Decision Log</div>
               {renderList(decisionLog, "No policy decisions logged")}
             </div>
+          </div>
+
+          <div style={{ ...cardStyle, display: "grid", gap: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>A2A Sequence Diagram (Live)</div>
+              <div style={{ fontSize: 11, color: "#667085" }}>Source: /protocol-trace/mermaid</div>
+            </div>
+            {protocolMermaidError ? <div style={{ fontSize: 12, color: "#b42318" }}>{protocolMermaidError}</div> : null}
+            <SequenceDiagram mermaidText={protocolMermaid} />
+            <details>
+              <summary style={{ cursor: "pointer", color: "#344054", fontSize: 12 }}>Show Mermaid Source</summary>
+              <pre
+                style={{
+                  margin: "8px 0 0 0",
+                  whiteSpace: "pre-wrap",
+                  fontSize: 12,
+                  color: "#1d2939",
+                  background: "#f8fafc",
+                  border: "1px solid #eaecf0",
+                  borderRadius: 8,
+                  padding: 8,
+                  maxHeight: 220,
+                  overflow: "auto",
+                }}
+              >
+                {protocolMermaid || "sequenceDiagram\nautonumber"}
+              </pre>
+            </details>
           </div>
 
           <div style={{ ...cardStyle, display: "grid", gap: 10 }}>

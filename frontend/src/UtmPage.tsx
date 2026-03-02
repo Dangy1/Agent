@@ -110,6 +110,12 @@ function chipStyle(active = false): React.CSSProperties {
   };
 }
 
+function trackRiskColor(risk?: MissionTrack["interferenceRisk"]): string {
+  if (risk === "high") return "#f04438";
+  if (risk === "medium") return "#f79009";
+  return "#12b76a";
+}
+
 function yesNoBadge(ok: unknown): React.ReactNode {
   const pass = ok === true;
   const fail = ok === false;
@@ -274,12 +280,13 @@ export function UtmPage() {
   const [utmChecks, setUtmChecks] = useState<UtmCheckResults>({});
   const [fullSubmitApproved, setFullSubmitApproved] = useState<boolean | null>(null);
 
-  const [nfzDraftX, setNfzDraftX] = useState("150");
-  const [nfzDraftY, setNfzDraftY] = useState("110");
+  const [nfzDraftX, setNfzDraftX] = useState("24.8290");
+  const [nfzDraftY, setNfzDraftY] = useState("60.1860");
   const [nfzDraftRadiusM, setNfzDraftRadiusM] = useState("30");
   const [nfzDraftReason, setNfzDraftReason] = useState("operator_defined");
   const [nfzDraftZMin, setNfzDraftZMin] = useState("0");
   const [nfzDraftZMax, setNfzDraftZMax] = useState("120");
+  const [nfzEditingZoneId, setNfzEditingZoneId] = useState<string | null>(null);
 
   const postUtm = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
     const res = await fetch(`${normalizeBaseUrl(apiBase)}${path}`, {
@@ -448,14 +455,20 @@ export function UtmPage() {
           bsId: String(c.bsId ?? ""),
           radiusM: Number(c.radiusM ?? 0),
         }));
-        const tracks: MissionTrack[] = asArrayRecords(result.trackingSnapshots).map((t) => ({
-          id: String(t.id ?? "uav"),
-          x: Number(t.x ?? 0),
-          y: Number(t.y ?? 0),
-          z: Number(t.z ?? 0),
-          attachedBsId: String(t.attachedBsId ?? ""),
-          interferenceRisk: String(t.interferenceRisk ?? "low") as MissionTrack["interferenceRisk"],
-        }));
+        const tracks: MissionTrack[] = asArrayRecords(result.trackingSnapshots).map((t) => {
+          const heading = Number(t.headingDeg ?? NaN);
+          const speed = Number(t.speedMps ?? NaN);
+          return {
+            id: String(t.id ?? "uav"),
+            x: Number(t.x ?? 0),
+            y: Number(t.y ?? 0),
+            z: Number(t.z ?? 0),
+            headingDeg: Number.isFinite(heading) ? heading : undefined,
+            speedMps: Number.isFinite(speed) ? speed : undefined,
+            attachedBsId: String(t.attachedBsId ?? ""),
+            interferenceRisk: String(t.interferenceRisk ?? "low") as MissionTrack["interferenceRisk"],
+          };
+        });
         setNetworkMap({ bs, coverage, tracks });
       } else {
         errs.push("Network");
@@ -565,9 +578,12 @@ export function UtmPage() {
     const speed = Number.parseFloat(requestedSpeedMps);
     const uav = asRecord(simState?.uav);
     const routeWaypoints = asArrayRecords(uav?.waypoints).map((w) => ({
-      x: Number(w.x ?? 0),
-      y: Number(w.y ?? 0),
-      z: Number(w.z ?? 0),
+      lon: Number(w.lon ?? w.x ?? 0),
+      lat: Number(w.lat ?? w.y ?? 0),
+      altM: Number(w.altM ?? w.z ?? 0),
+      x: Number(w.lon ?? w.x ?? 0),
+      y: Number(w.lat ?? w.y ?? 0),
+      z: Number(w.altM ?? w.z ?? 0),
     }));
     await runCheck(
       "/api/utm/checks/route",
@@ -613,9 +629,12 @@ export function UtmPage() {
     const speed = Number.parseFloat(requestedSpeedMps);
     const uav = asRecord(simState?.uav);
     const routeWaypoints = asArrayRecords(uav?.waypoints).map((w) => ({
-      x: Number(w.x ?? 0),
-      y: Number(w.y ?? 0),
-      z: Number(w.z ?? 0),
+      lon: Number(w.lon ?? w.x ?? 0),
+      lat: Number(w.lat ?? w.y ?? 0),
+      altM: Number(w.altM ?? w.z ?? 0),
+      x: Number(w.lon ?? w.x ?? 0),
+      y: Number(w.lat ?? w.y ?? 0),
+      z: Number(w.altM ?? w.z ?? 0),
     }));
     await runCheck(
       "/api/utm/verify-from-uav",
@@ -867,10 +886,11 @@ export function UtmPage() {
     );
   };
 
-  const addNoFlyZoneAt = async (point: { x: number; y: number }) => {
+  const addNoFlyZoneAt = async (point: { x: number; y: number }, opts?: { zoneId?: string | null }) => {
     const radiusM = Number.parseFloat(nfzDraftRadiusM);
     const zMin = Number.parseFloat(nfzDraftZMin);
     const zMax = Number.parseFloat(nfzDraftZMax);
+    const zoneId = String(opts?.zoneId ?? "").trim();
     if (!Number.isFinite(radiusM) || radiusM <= 0) {
       setMsg("Action failed: NFZ radius must be positive");
       return;
@@ -882,16 +902,25 @@ export function UtmPage() {
     try {
       setBusy(true);
       await postUtm("/api/utm/nfz", {
+        zone_id: zoneId || undefined,
+        lon: point.x,
+        lat: point.y,
         cx: point.x,
         cy: point.y,
+        shape: "circle",
         radius_m: radiusM,
         z_min: zMin,
         z_max: zMax,
         reason: nfzDraftReason.trim() || "operator_defined",
       });
-      setNfzDraftX(String(Number(point.x.toFixed(1))));
-      setNfzDraftY(String(Number(point.y.toFixed(1))));
-      setMsg(`No-fly zone added at (${point.x.toFixed(1)}, ${point.y.toFixed(1)})`);
+      setNfzDraftX(String(Number(point.x.toFixed(6))));
+      setNfzDraftY(String(Number(point.y.toFixed(6))));
+      setNfzEditingZoneId(zoneId || null);
+      setMsg(
+        zoneId
+          ? `No-fly zone ${zoneId} updated at lon/lat (${point.x.toFixed(6)}, ${point.y.toFixed(6)})`
+          : `No-fly zone added at lon/lat (${point.x.toFixed(6)}, ${point.y.toFixed(6)})`,
+      );
       bumpSharedRevision();
       await loadAll();
     } catch (e) {
@@ -904,25 +933,77 @@ export function UtmPage() {
     const x = Number.parseFloat(nfzDraftX);
     const y = Number.parseFloat(nfzDraftY);
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      setMsg("Action failed: NFZ X/Y must be numbers");
+      setMsg("Action failed: NFZ lon/lat must be numbers");
       return;
     }
-    await addNoFlyZoneAt({ x, y });
+    if (x < -180 || x > 180 || y < -90 || y > 90) {
+      setMsg("Action failed: NFZ lon/lat out of range");
+      return;
+    }
+    await addNoFlyZoneAt({ x, y }, { zoneId: nfzEditingZoneId });
+  };
+
+  const cancelNfzEdit = () => {
+    setNfzEditingZoneId(null);
+    setNfzDraftX("24.8290");
+    setNfzDraftY("60.1860");
+    setNfzDraftRadiusM("30");
+    setNfzDraftReason("operator_defined");
+    setNfzDraftZMin("0");
+    setNfzDraftZMax("120");
+  };
+
+  const beginNfzEdit = (zone: MissionNfz) => {
+    const zoneId = String(zone.zone_id ?? "").trim();
+    if (!zoneId) {
+      setMsg("Action failed: NFZ zone_id missing");
+      return;
+    }
+    setNfzEditingZoneId(zoneId);
+    setNfzDraftX(String(Number(zone.cx).toFixed(6)));
+    setNfzDraftY(String(Number(zone.cy).toFixed(6)));
+    setNfzDraftRadiusM(String(Number(zone.radius_m)));
+    setNfzDraftZMin(String(Number(zone.z_min ?? 0)));
+    setNfzDraftZMax(String(Number(zone.z_max ?? 120)));
+    setNfzDraftReason(String(zone.reason ?? "operator_defined"));
+    setMsg(`Editing no-fly zone ${zoneId}`);
+  };
+
+  const deleteNoFlyZone = async (zoneId: string) => {
+    const zid = String(zoneId || "").trim();
+    if (!zid) {
+      setMsg("Action failed: NFZ zone_id missing");
+      return;
+    }
+    if (!window.confirm(`Delete no-fly zone ${zid}?`)) return;
+    try {
+      setBusy(true);
+      const out = await deleteUtm(`/api/utm/nfz/${encodeURIComponent(zid)}`);
+      const deleted = asRecord(out.result)?.deleted === true;
+      if (nfzEditingZoneId === zid) cancelNfzEdit();
+      setMsg(deleted ? `Deleted no-fly zone ${zid}` : `No-fly zone ${zid} was not found`);
+      bumpSharedRevision();
+      await loadAll();
+    } catch (e) {
+      setBusy(false);
+      setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const simUav = asRecord(simState?.uav);
   const routePointsForMap = asArrayRecords(simUav?.waypoints).map((w) => ({
-    x: Number(w.x ?? 0),
-    y: Number(w.y ?? 0),
-    z: Number(w.z ?? 0),
+    x: Number(w.lon ?? w.x ?? 0),
+    y: Number(w.lat ?? w.y ?? 0),
+    z: Number(w.altM ?? w.z ?? 0),
   }));
   const plannedPosForMap = routePointsForMap.length > 0 ? routePointsForMap[0] : null;
 
   const nfzRaw = asArrayRecords(utmState?.noFlyZones ?? simState?.utm?.no_fly_zones ?? []);
   const nfzZonesForMap: MissionNfz[] = nfzRaw.map((z) => ({
     zone_id: String(z.zone_id ?? "nfz"),
-    cx: Number(z.cx ?? 0),
-    cy: Number(z.cy ?? 0),
+    cx: Number(z.lon ?? z.cx ?? 0),
+    cy: Number(z.lat ?? z.cy ?? 0),
+    shape: String(z.shape ?? "circle").toLowerCase() === "box" ? "box" : "circle",
     radius_m: Number(z.radius_m ?? 0),
     z_min: Number(z.z_min ?? 0),
     z_max: Number(z.z_max ?? 120),
@@ -1138,6 +1219,11 @@ export function UtmPage() {
     selectedMapUserId === "all"
       ? networkMap.tracks
       : networkMap.tracks.filter((track) => mapTrackIdSet.has(track.id));
+  const selectedMapTrack = mapTracks.find((track) => track.id === simUavId) ?? mapTracks[0] ?? null;
+  const selectedFleetTrack = selectedMapTrack ? asRecord(fleetMap[selectedMapTrack.id]) : null;
+  const selectedFleetBatteryPct = Number(selectedFleetTrack?.battery_pct ?? NaN);
+  const selectedFleetArmed = selectedFleetTrack?.armed === true;
+  const selectedFleetActive = selectedFleetTrack?.active === true;
   const layeredFleetCountRaw = Number(layeredSummary?.fleet_count);
   const totalUavCount =
     Number.isFinite(layeredFleetCountRaw) && layeredFleetCountRaw > 0
@@ -1321,26 +1407,137 @@ export function UtmPage() {
               <div style={{ fontWeight: 700, color: "#101828" }}>UTM Map + No-Fly Zones</div>
               <div style={{ fontSize: 11, color: "#667085" }}>Shift+click map to add NFZ center</div>
             </div>
+            {selectedMapTrack ? (
+              <div
+                style={{
+                  border: "1px solid #d1e0ff",
+                  borderRadius: 10,
+                  background: "linear-gradient(160deg, #f5f8ff 0%, #ffffff 60%, #f8fcff 100%)",
+                  padding: "8px 10px",
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#101828" }}>
+                    Selected UAV <code>{selectedMapTrack.id}</code>
+                  </div>
+                  <span
+                    style={{
+                      borderRadius: 999,
+                      border: `1px solid ${trackRiskColor(selectedMapTrack.interferenceRisk)}66`,
+                      background: `${trackRiskColor(selectedMapTrack.interferenceRisk)}14`,
+                      color: trackRiskColor(selectedMapTrack.interferenceRisk),
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      padding: "2px 8px",
+                    }}
+                  >
+                    {String(selectedMapTrack.interferenceRisk ?? "low")} risk
+                  </span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Position</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>
+                      ({selectedMapTrack.x.toFixed(1)}, {selectedMapTrack.y.toFixed(1)}, {selectedMapTrack.z?.toFixed(1) ?? "0.0"})
+                    </div>
+                  </div>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Heading / Speed</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>
+                      {Number.isFinite(selectedMapTrack.headingDeg) ? `${Math.round(Number(selectedMapTrack.headingDeg))}°` : "-"} /{" "}
+                      {Number.isFinite(selectedMapTrack.speedMps) ? `${Number(selectedMapTrack.speedMps).toFixed(1)} m/s` : "-"}
+                    </div>
+                  </div>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Armed / Active</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: selectedFleetArmed && selectedFleetActive ? "#027a48" : "#475467" }}>
+                      {selectedFleetArmed ? "Yes" : "No"} / {selectedFleetActive ? "Yes" : "No"}
+                    </div>
+                  </div>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Battery / BS</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: Number.isFinite(selectedFleetBatteryPct) && selectedFleetBatteryPct < 25 ? "#b42318" : "#101828" }}>
+                      {Number.isFinite(selectedFleetBatteryPct) ? `${selectedFleetBatteryPct.toFixed(0)}%` : "-"} / {selectedMapTrack.attachedBsId || "N/A"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <MissionSyncMap
               title="Select User and Target UAV Map"
               route={routePointsForMap}
               plannedPosition={plannedPosForMap}
               trackedPositions={mapTracks}
+              mapServiceBase={getSharedPageState().networkApiBase || "http://127.0.0.1:8022"}
               selectedUavId={simUavId}
               noFlyZones={nfzZonesForMap}
               baseStations={networkMap.bs}
               coverage={networkMap.coverage}
+              coordinateMode="geo"
+              trackMarkerStyle="uav"
+              focusSelectedTrack
               clickable
               onAddNoFlyZoneCenter={(p) => void addNoFlyZoneAt({ x: p.x, y: p.y })}
             />
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.1fr) repeat(5, minmax(64px, 90px)) auto", gap: 8, alignItems: "end" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(140px, 1.1fr) repeat(5, minmax(64px, 90px)) auto auto", gap: 8, alignItems: "end" }}>
               <label style={{ fontSize: 12 }}>Reason<input style={inputStyle} value={nfzDraftReason} onChange={(e) => setNfzDraftReason(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>X<input style={inputStyle} value={nfzDraftX} onChange={(e) => setNfzDraftX(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>Y<input style={inputStyle} value={nfzDraftY} onChange={(e) => setNfzDraftY(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>Lon<input style={inputStyle} value={nfzDraftX} onChange={(e) => setNfzDraftX(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>Lat<input style={inputStyle} value={nfzDraftY} onChange={(e) => setNfzDraftY(e.target.value)} /></label>
               <label style={{ fontSize: 12 }}>R(m)<input style={inputStyle} value={nfzDraftRadiusM} onChange={(e) => setNfzDraftRadiusM(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>Zmin<input style={inputStyle} value={nfzDraftZMin} onChange={(e) => setNfzDraftZMin(e.target.value)} /></label>
-              <label style={{ fontSize: 12 }}>Zmax<input style={inputStyle} value={nfzDraftZMax} onChange={(e) => setNfzDraftZMax(e.target.value)} /></label>
-              <button type="button" style={chipStyle(false)} onClick={() => void addNoFlyZoneByForm()} disabled={busy}>Add NFZ</button>
+              <label style={{ fontSize: 12 }}>Alt min<input style={inputStyle} value={nfzDraftZMin} onChange={(e) => setNfzDraftZMin(e.target.value)} /></label>
+              <label style={{ fontSize: 12 }}>Alt max<input style={inputStyle} value={nfzDraftZMax} onChange={(e) => setNfzDraftZMax(e.target.value)} /></label>
+              <button type="button" style={chipStyle(false)} onClick={() => void addNoFlyZoneByForm()} disabled={busy}>
+                {nfzEditingZoneId ? `Save NFZ ${nfzEditingZoneId}` : "Add NFZ"}
+              </button>
+              <button type="button" style={chipStyle(false)} onClick={cancelNfzEdit} disabled={busy || !nfzEditingZoneId}>
+                Cancel Edit
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "#667085" }}>
+              {nfzEditingZoneId ? `Editing zone ${nfzEditingZoneId}. Save to update this zone.` : "Click Edit in the list below to modify an existing no-fly zone."}
+            </div>
+            <div style={{ overflowX: "auto", maxHeight: 220 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Zone</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Lon</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Lat</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Radius</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Altitude</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Reason</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #eaecf0", padding: "6px 4px" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nfzZonesForMap.length === 0 ? (
+                    <tr><td colSpan={7} style={{ padding: "8px 4px", color: "#667085" }}>No no-fly zones defined.</td></tr>
+                  ) : (
+                    nfzZonesForMap.map((z, idx) => {
+                      const zoneId = String(z.zone_id ?? "").trim() || `nfz-${idx + 1}`;
+                      return (
+                        <tr key={`${zoneId}-${idx}`}>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}><code>{zoneId}</code></td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{Number(z.cx).toFixed(6)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{Number(z.cy).toFixed(6)}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{Math.round(Number(z.radius_m || 0))} m</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>{Math.round(Number(z.z_min ?? 0))}..{Math.round(Number(z.z_max ?? 120))} m</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px", color: "#667085" }}>{String(z.reason || "-")}</td>
+                          <td style={{ borderBottom: "1px solid #f2f4f7", padding: "6px 4px" }}>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <button type="button" style={chipStyle(nfzEditingZoneId === zoneId)} onClick={() => beginNfzEdit({ ...z, zone_id: zoneId })} disabled={busy}>Edit</button>
+                              <button type="button" style={chipStyle(false)} onClick={() => void deleteNoFlyZone(zoneId)} disabled={busy}>Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 

@@ -40,6 +40,27 @@ def add_no_fly_zone(payload: NoFlyZonePayload) -> Dict[str, Any]:
     return {"status": "success", "sync": sync, "result": result}
 
 
+@router.put("/api/utm/nfz/{zone_id}")
+def update_no_fly_zone(zone_id: str, payload: NoFlyZonePayload) -> Dict[str, Any]:
+    row = payload.model_dump()
+    row["zone_id"] = str(zone_id)
+    result = UTM_SERVICE.add_no_fly_zone(**row)
+    sync = _log_uav_action("utm_update_nfz", payload=row, result=result, entity_id=str(zone_id))
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@router.delete("/api/utm/nfz/{zone_id}")
+def delete_no_fly_zone(zone_id: str) -> Dict[str, Any]:
+    zid = str(zone_id or "").strip()
+    zones = normalize_no_fly_zones(UTM_SERVICE.no_fly_zones)
+    kept = [dict(z) for z in zones if str(z.get("zone_id", "")).strip() != zid]
+    deleted = len(kept) != len(zones)
+    UTM_SERVICE.no_fly_zones = kept
+    result = {"zone_id": zid, "deleted": deleted, "remaining_count": len(kept)}
+    sync = _log_uav_action("utm_delete_nfz", payload={"zone_id": zid}, result=result, entity_id=zid)
+    return {"status": "success", "sync": sync, "result": result}
+
+
 @router.post("/api/utm/license")
 def register_license(payload: LicensePayload) -> Dict[str, Any]:
     result = UTM_SERVICE.register_operator_license(**payload.model_dump())

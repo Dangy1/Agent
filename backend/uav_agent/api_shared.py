@@ -51,7 +51,14 @@ from .api_models import (
 from .command_adapter import get_uav_control_adapter_status
 from .copilot_utils import _chat_completion_json, _utm_nfz_conflict_feedback
 from .graph import run_copilot_workflow
-from .simulator import SIM
+from .simulator import (
+    LEGACY_LOCAL_MAX_X_M,
+    LEGACY_LOCAL_MAX_Y_M,
+    MAP_RELEVANCE_RADIUS_M,
+    OTANIEMI_CENTER_LAT,
+    OTANIEMI_CENTER_LON,
+    SIM,
+)
 from .tools import (
     uav_hold,
     uav_land,
@@ -65,8 +72,10 @@ from .tools import (
     uav_status,
     uav_submit_route_to_utm_geofence_check,
 )
+from geo_utils import extract_lon_lat_alt, haversine_m, lon_lat_from_local_xy_m, normalize_no_fly_zones, normalize_waypoints, point_with_aliases
 from agent_db import AgentDB
 from network_agent.service import NETWORK_MISSION_SERVICE
+from services.map_agent.map_agent_api import MAP_SERVICE_AGENT
 from utm_agent.dss_gateway import gateway_upsert_operational_intent
 from utm_agent.security_controls import authorize_service_request, ensure_security_state
 from utm_agent.service import UTM_SERVICE
@@ -243,11 +252,26 @@ def _log_uav_action(action: str, *, payload: Any = None, result: Any = None, ent
             )
             UAV_DB.set_state("uav_station_control_log", rows[-5000:])
     _persist_uav_state()
-    return UAV_DB.record_action(action, payload=payload, result=result, entity_id=entity_id)
+    sync = UAV_DB.record_action(action, payload=payload, result=result, entity_id=entity_id)
+    try:
+        MAP_SERVICE_AGENT.sync_uav_fleet({"fleet": SIM.fleet_snapshot()}, scope="shared", source="uav")
+        if action.startswith("utm_"):
+            MAP_SERVICE_AGENT.sync_utm_state(UTM_SERVICE.export_state(), scope="shared", source="utm")
+        if action.startswith("network_"):
+            MAP_SERVICE_AGENT.sync_network_state(NETWORK_MISSION_SERVICE.export_state(), scope="shared", source="network")
+    except Exception:
+        # Keep UAV operations resilient if map sync fails.
+        pass
+    return sync
 
 
 def _log_utm_mirror_action(action: str, *, payload: Any = None, result: Any = None, entity_id: str | None = None) -> Dict[str, Any]:
-    return UTM_DB_MIRROR.record_action(action, payload=payload, result=result, entity_id=entity_id)
+    sync = UTM_DB_MIRROR.record_action(action, payload=payload, result=result, entity_id=entity_id)
+    try:
+        MAP_SERVICE_AGENT.sync_utm_state(UTM_SERVICE.export_state(), scope="shared", source="utm")
+    except Exception:
+        pass
+    return sync
 
 
 def _refresh_utm_mirror_from_real_service(
@@ -292,7 +316,7 @@ def _refresh_utm_mirror_from_real_service(
     if isinstance(weather, dict):
         UTM_SERVICE.set_weather(airspace_segment, **dict(weather))
     if isinstance(no_fly_zones, list):
-        UTM_SERVICE.no_fly_zones = [dict(z) for z in no_fly_zones if isinstance(z, dict)]
+        UTM_SERVICE.no_fly_zones = normalize_no_fly_zones(no_fly_zones)
     if isinstance(regulations, dict):
         UTM_SERVICE.regulations = dict(regulations)
     if isinstance(regulation_profiles, dict):
@@ -959,14 +983,15 @@ def _route_volume4d_for_waypoints(
     planned_start_at: str | None = None,
     planned_end_at: str | None = None,
 ) -> Dict[str, Any]:
+    waypoints = normalize_waypoints(waypoints)
     now = datetime.now(timezone.utc)
     start = planned_start_at or now.isoformat().replace("+00:00", "Z")
     end = planned_end_at or (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z")
     if not waypoints:
         return {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0.0, 120.0], "time_start": start, "time_end": end}
-    xs = [float(w.get("x", 0.0)) for w in waypoints]
-    ys = [float(w.get("y", 0.0)) for w in waypoints]
-    zs = [float(w.get("z", 0.0)) for w in waypoints]
+    xs = [float(w.get("lon", w.get("x", 0.0))) for w in waypoints]
+    ys = [float(w.get("lat", w.get("y", 0.0))) for w in waypoints]
+    zs = [float(w.get("altM", w.get("z", 0.0))) for w in waypoints]
     return {
         "x": [min(xs), max(xs)],
         "y": [min(ys), max(ys)],
@@ -1257,7 +1282,7 @@ def _record_planned_route_history(*, uav_id: str, route_id: str, waypoints: list
         {
             "uav_id": uav_id,
             "route_id": route_id,
-            "waypoints": [dict(w) for w in waypoints],
+            "waypoints": normalize_waypoints(waypoints),
             "source": source,
             "metadata": {**meta, "route_category": category},
             "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -1305,7 +1330,7 @@ def _record_approved_flight_path_history(
         "uav_id": uav_id,
         "mission_id": metadata.get("mission_id") if isinstance(metadata, dict) else None,
         "route_id": route_id,
-        "waypoints": [dict(w) for w in waypoints],
+        "waypoints": normalize_waypoints(waypoints),
         "approval_id": approval.get("approval_id"),
         "approved": bool(approval.get("approved")),
         "signature_verified": bool(approval.get("signature_verified")),
@@ -1809,17 +1834,41 @@ def _delete_approved_flight_path_for_scope(*, db: AgentDB, state_key: str, user_
 
 
 def _generate_reset_route_from_position(pos: Dict[str, Any]) -> List[Dict[str, float]]:
-    x0 = float(pos.get("x", 0.0))
-    y0 = float(pos.get("y", 0.0))
-    z0 = max(0.0, float(pos.get("z", 0.0)))
+    x0, y0, z0_raw = extract_lon_lat_alt(pos)
+    z0 = max(0.0, float(z0_raw))
     cruise = max(30.0, z0 if z0 > 0 else 40.0)
+    looks_geo = -180.0 <= x0 <= 180.0 and -90.0 <= y0 <= 90.0
+    looks_local_xy = 0.0 <= x0 <= LEGACY_LOCAL_MAX_X_M and 0.0 <= y0 <= LEGACY_LOCAL_MAX_Y_M
+    if looks_geo:
+        if haversine_m(x0, y0, OTANIEMI_CENTER_LON, OTANIEMI_CENTER_LAT) > MAP_RELEVANCE_RADIUS_M:
+            if looks_local_xy:
+                x0, y0 = lon_lat_from_local_xy_m(
+                    x0,
+                    y0,
+                    ref_lon=OTANIEMI_CENTER_LON,
+                    ref_lat=OTANIEMI_CENTER_LAT,
+                )
+            else:
+                x0, y0 = OTANIEMI_CENTER_LON, OTANIEMI_CENTER_LAT
+    elif looks_local_xy:
+        x0, y0 = lon_lat_from_local_xy_m(
+            x0,
+            y0,
+            ref_lon=OTANIEMI_CENTER_LON,
+            ref_lat=OTANIEMI_CENTER_LAT,
+        )
+    else:
+        x0, y0 = OTANIEMI_CENTER_LON, OTANIEMI_CENTER_LAT
+    lon1, lat1 = lon_lat_from_local_xy_m(55.0, 25.0, ref_lon=x0, ref_lat=y0)
+    lon2, lat2 = lon_lat_from_local_xy_m(115.0, -15.0, ref_lon=x0, ref_lat=y0)
+    lon3, lat3 = lon_lat_from_local_xy_m(165.0, 45.0, ref_lon=x0, ref_lat=y0)
     pts = [
-        {"x": x0, "y": y0, "z": z0},
-        {"x": min(400.0, x0 + 55.0), "y": min(300.0, y0 + 25.0), "z": min(120.0, cruise)},
-        {"x": min(400.0, x0 + 115.0), "y": max(0.0, y0 - 15.0), "z": min(120.0, cruise + 10.0)},
-        {"x": min(400.0, x0 + 165.0), "y": min(300.0, y0 + 45.0), "z": min(120.0, cruise)},
+        point_with_aliases({"lon": x0, "lat": y0, "altM": z0}),
+        point_with_aliases({"lon": lon1, "lat": lat1, "altM": min(120.0, cruise)}),
+        point_with_aliases({"lon": lon2, "lat": lat2, "altM": min(120.0, cruise + 10.0)}),
+        point_with_aliases({"lon": lon3, "lat": lat3, "altM": min(120.0, cruise)}),
     ]
-    return pts
+    return pts  # type: ignore[return-value]
 
 
 _ensure_registry_seed()
@@ -2137,7 +2186,7 @@ def _enforce_flight_control_gate_or_raise(*, uav_id: str, action: str, user_id: 
 def _sim_waypoints(uav_id: str) -> tuple[str, list[dict]]:
     sim = SIM.status(uav_id)
     route_id = str(sim.get("route_id", "route-1"))
-    waypoints = list(sim.get("waypoints", [])) if isinstance(sim.get("waypoints"), list) else []
+    waypoints = normalize_waypoints(list(sim.get("waypoints", [])) if isinstance(sim.get("waypoints"), list) else [])
     return route_id, waypoints
 
 

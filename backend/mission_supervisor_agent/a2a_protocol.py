@@ -8,6 +8,16 @@ from typing import Any, Dict, Tuple
 
 from .command_types import classify_command_operation_type
 
+try:
+    from a2a.types import DataPart, Message, MessageSendConfiguration, MessageSendParams, SendMessageRequest, TextPart
+except Exception:  # pragma: no cover - optional dependency
+    DataPart = None  # type: ignore[assignment]
+    Message = None  # type: ignore[assignment]
+    MessageSendConfiguration = None  # type: ignore[assignment]
+    MessageSendParams = None  # type: ignore[assignment]
+    SendMessageRequest = None  # type: ignore[assignment]
+    TextPart = None  # type: ignore[assignment]
+
 # A2A JSON-RPC request envelope (https://a2a-protocol.org).
 A2A_PROTOCOL_ID = "A2A"
 A2A_PROTOCOL_VERSION = "0.2.6"
@@ -173,6 +183,90 @@ def _command_summary_text(cmd: Dict[str, Any], intent_type: str, sender: str, re
     return f"[{sender} -> {receiver}] {intent_type} {domain}.{op}"
 
 
+def _build_a2a_request(
+    *,
+    message_id: str,
+    mission_id: str,
+    correlation_id: str,
+    sender: str,
+    receiver: str,
+    intent_type: str,
+    cmd: Dict[str, Any],
+    mission_phase: str,
+    deterministic_hint: bool,
+    task_idempotency_key: str,
+) -> Dict[str, Any]:
+    # Prefer a2a-sdk models when available in the runtime env.
+    if all(v is not None for v in (SendMessageRequest, MessageSendParams, Message, TextPart, DataPart, MessageSendConfiguration)):
+        try:
+            text_part = TextPart(text=_command_summary_text(cmd, intent_type, sender, receiver))
+            data_part = DataPart(data=dict(cmd), metadata={"contentType": "application/json"})
+            msg = Message(
+                kind="message",
+                message_id=message_id,
+                context_id=mission_id,
+                task_id=correlation_id,
+                role="agent",
+                parts=[text_part, data_part],
+                metadata={
+                    "sender": sender,
+                    "receiver": receiver,
+                    "intentType": intent_type,
+                    "missionPhase": mission_phase,
+                    "deterministicHint": deterministic_hint,
+                    "taskIdempotencyKey": task_idempotency_key,
+                },
+            )
+            req = SendMessageRequest(
+                id=message_id,
+                params=MessageSendParams(
+                    message=msg,
+                    configuration=MessageSendConfiguration(
+                        accepted_output_modes=["application/json"],
+                        history_length=0,
+                        blocking=True,
+                    ),
+                ),
+            )
+            return dict(req.model_dump(mode="json", by_alias=True, exclude_none=True))
+        except Exception:
+            # Fall back to a plain dict envelope if the SDK API evolves.
+            pass
+
+    message: Dict[str, Any] = {
+        "kind": "message",
+        "messageId": message_id,
+        "contextId": mission_id,
+        "taskId": correlation_id,
+        "role": "agent",
+        "parts": [
+            {"kind": "text", "text": _command_summary_text(cmd, intent_type, sender, receiver)},
+            {"kind": "data", "data": dict(cmd), "metadata": {"contentType": "application/json"}},
+        ],
+        "metadata": {
+            "sender": sender,
+            "receiver": receiver,
+            "intentType": intent_type,
+            "missionPhase": mission_phase,
+            "deterministicHint": deterministic_hint,
+            "taskIdempotencyKey": task_idempotency_key,
+        },
+    }
+    return {
+        "jsonrpc": A2A_JSONRPC_VERSION,
+        "id": message_id,
+        "method": A2A_SEND_MESSAGE_METHOD,
+        "params": {
+            "message": message,
+            "configuration": {
+                "acceptedOutputModes": ["application/json"],
+                "historyLength": 0,
+                "blocking": True,
+            },
+        },
+    }
+
+
 @dataclass(frozen=True)
 class A2AEnvelope:
     protocol: str
@@ -226,40 +320,27 @@ class A2AEnvelope:
         deterministic_hint = bool(params.get("_idempotent")) or operation_type == "observe"
         message_id = f"a2a-{digest}"
         resolved_receiver = receiver or _clean_str(cmd.get("domain"), default="unknown")
-        message: Dict[str, Any] = {
-            # `kind` is still commonly used by current A2A SDK examples.
-            "kind": "message",
-            "messageId": message_id,
-            "contextId": mission_id,
-            "taskId": correlation_id,
-            "role": "agent",
-            "parts": [
-                {"kind": "text", "text": _command_summary_text(cmd, intent_type, sender, resolved_receiver)},
-                {"kind": "data", "data": dict(cmd), "metadata": {"contentType": "application/json"}},
-            ],
-            "metadata": {
-                "sender": sender,
-                "receiver": resolved_receiver,
-                "intentType": intent_type,
-                "missionPhase": _clean_str(state.get("mission_phase"), default="unknown"),
-                "deterministicHint": deterministic_hint,
-                "taskIdempotencyKey": _clean_str(state.get("task_idempotency_key")),
-            },
-        }
-        request_params: Dict[str, Any] = {
-            "message": message,
-            "configuration": {
-                "acceptedOutputModes": ["application/json"],
-                "historyLength": 0,
-                "blocking": True,
-            },
-        }
+        mission_phase = _clean_str(state.get("mission_phase"), default="unknown")
+        task_idempotency_key = _clean_str(state.get("task_idempotency_key"))
+        request = _build_a2a_request(
+            message_id=message_id,
+            mission_id=mission_id,
+            correlation_id=correlation_id,
+            sender=sender,
+            receiver=resolved_receiver,
+            intent_type=intent_type,
+            cmd=cmd,
+            mission_phase=mission_phase,
+            deterministic_hint=deterministic_hint,
+            task_idempotency_key=task_idempotency_key,
+        )
+        request_params = dict(request.get("params") or {})
         return cls(
             protocol=A2A_PROTOCOL_ID,
             version=A2A_PROTOCOL_VERSION,
-            jsonrpc=A2A_JSONRPC_VERSION,
-            id=message_id,
-            method=A2A_SEND_MESSAGE_METHOD,
+            jsonrpc=_clean_str(request.get("jsonrpc"), default=A2A_JSONRPC_VERSION),
+            id=_clean_str(request.get("id"), default=message_id),
+            method=_clean_str(request.get("method"), default=A2A_SEND_MESSAGE_METHOD),
             params=request_params,
             message_id=message_id,
             parent_message_id=_clean_str(state.get("parent_message_id")) or None,
@@ -272,8 +353,8 @@ class A2AEnvelope:
             command=cmd,
             constraints={"deterministic_hint": deterministic_hint},
             metadata={
-                "mission_phase": _clean_str(state.get("mission_phase"), default="unknown"),
-                "task_idempotency_key": _clean_str(state.get("task_idempotency_key")),
+                "mission_phase": mission_phase,
+                "task_idempotency_key": task_idempotency_key,
             },
         )
 

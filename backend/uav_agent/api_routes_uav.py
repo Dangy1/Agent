@@ -15,6 +15,14 @@ from .api_models import (
     UavDemoSeedPayload,
 )
 from .command_adapter import parse_control_operation
+from .simulator import (
+    LEGACY_LOCAL_MAX_X_M,
+    LEGACY_LOCAL_MAX_Y_M,
+    MAP_RELEVANCE_RADIUS_M,
+    OTANIEMI_CENTER_LAT,
+    OTANIEMI_CENTER_LON,
+)
+from geo_utils import haversine_m, lon_lat_from_local_xy_m
 
 router = APIRouter()
 
@@ -37,6 +45,21 @@ _CONTROL_BRIDGE_STUB_ADAPTER = {
 }
 
 
+def _coerce_add_uav_lon_lat(lon: float, lat: float) -> tuple[float, float]:
+    x = float(lon)
+    y = float(lat)
+    looks_local_xy = 0.0 <= x <= LEGACY_LOCAL_MAX_X_M and 0.0 <= y <= LEGACY_LOCAL_MAX_Y_M
+    if -180.0 <= x <= 180.0 and -90.0 <= y <= 90.0:
+        if haversine_m(x, y, OTANIEMI_CENTER_LON, OTANIEMI_CENTER_LAT) <= MAP_RELEVANCE_RADIUS_M:
+            return x, y
+        if looks_local_xy:
+            return lon_lat_from_local_xy_m(x, y, ref_lon=OTANIEMI_CENTER_LON, ref_lat=OTANIEMI_CENTER_LAT)
+        return OTANIEMI_CENTER_LON, OTANIEMI_CENTER_LAT
+    if looks_local_xy:
+        return lon_lat_from_local_xy_m(x, y, ref_lon=OTANIEMI_CENTER_LON, ref_lat=OTANIEMI_CENTER_LAT)
+    return OTANIEMI_CENTER_LON, OTANIEMI_CENTER_LAT
+
+
 def _control_stub_state_all() -> Dict[str, Dict[str, Any]]:
     raw = UAV_DB.get_state(_CONTROL_BRIDGE_STUB_STATE_KEY)
     return dict(raw) if isinstance(raw, dict) else {}
@@ -49,11 +72,7 @@ def _control_stub_save_all(state_map: Dict[str, Dict[str, Any]]) -> None:
 def _control_stub_default_state(uav_id: str) -> Dict[str, Any]:
     snap = SIM.status_if_exists(uav_id) or {}
     pos_raw = snap.get("position") if isinstance(snap.get("position"), dict) else {}
-    pos = {
-        "x": float(pos_raw.get("x", 0.0)),
-        "y": float(pos_raw.get("y", 0.0)),
-        "z": float(pos_raw.get("z", 0.0)),
-    }
+    pos = point_with_aliases(pos_raw)
     return {
         "uav_id": uav_id,
         "route_id": str(snap.get("route_id", "route-1") or "route-1"),
@@ -99,16 +118,32 @@ def _control_stub_apply_operation(*, uav_id: str, operation: str, params: Dict[s
             distance = velocity * dt_s * ticks
             heading_deg = float(params.get("heading_deg", 30.0) or 30.0)
             heading_rad = heading_deg * (3.141592653589793 / 180.0)
-            pos["x"] = float(pos.get("x", 0.0)) + distance * math.cos(heading_rad)
-            pos["y"] = float(pos.get("y", 0.0)) + distance * math.sin(heading_rad)
+            current_lon = float(pos.get("x", 0.0))
+            current_lat = float(pos.get("y", 0.0))
+            step_east_m = distance * math.cos(heading_rad)
+            step_north_m = distance * math.sin(heading_rad)
+            if -180.0 <= current_lon <= 180.0 and -90.0 <= current_lat <= 90.0:
+                next_lon, next_lat = lon_lat_from_local_xy_m(
+                    step_east_m,
+                    step_north_m,
+                    ref_lon=current_lon,
+                    ref_lat=current_lat,
+                )
+                pos["x"] = float(next_lon)
+                pos["y"] = float(next_lat)
+            else:
+                pos["x"] = current_lon + step_east_m
+                pos["y"] = current_lat + step_north_m
             if str(state.get("flight_phase", "")).upper() == "TAKEOFF":
                 pos["z"] = min(120.0, float(pos.get("z", 0.0)) + 2.0 * ticks)
                 state["flight_phase"] = "MISSION" if float(pos.get("z", 0.0)) >= 20.0 else "TAKEOFF"
-            state["position"] = {
-                "x": round(float(pos.get("x", 0.0)), 3),
-                "y": round(float(pos.get("y", 0.0)), 3),
-                "z": round(float(pos.get("z", 0.0)), 3),
-            }
+            state["position"] = point_with_aliases(
+                {
+                    "x": round(float(pos.get("x", 0.0)), 7),
+                    "y": round(float(pos.get("y", 0.0)), 7),
+                    "z": round(float(pos.get("z", 0.0)), 3),
+                }
+            )
             state["waypoint_index"] = int(state.get("waypoint_index", 0) or 0) + ticks
             state["battery_pct"] = max(0.0, float(state.get("battery_pct", 100.0) or 100.0) - 0.4 * ticks)
             if float(state.get("battery_pct", 0.0)) < 15.0:
@@ -127,9 +162,7 @@ def _control_stub_apply_operation(*, uav_id: str, operation: str, params: Dict[s
         waypoints = sim.get("waypoints") if isinstance(sim.get("waypoints"), list) else []
         home = waypoints[0] if isinstance(waypoints, list) and waypoints and isinstance(waypoints[0], dict) else {"x": 0.0, "y": 0.0, "z": 0.0}
         state["position"] = {
-            "x": float(home.get("x", 0.0)),
-            "y": float(home.get("y", 0.0)),
-            "z": float(home.get("z", 0.0)),
+            **point_with_aliases(home),
         }
         state["waypoint_index"] = 0
     elif operation == "land":
@@ -137,17 +170,15 @@ def _control_stub_apply_operation(*, uav_id: str, operation: str, params: Dict[s
         state["armed"] = False
         state["flight_phase"] = "LAND"
         pos["z"] = 0.0
-        state["position"] = {
-            "x": float(pos.get("x", 0.0)),
-            "y": float(pos.get("y", 0.0)),
-            "z": 0.0,
-        }
+        state["position"] = point_with_aliases({"x": float(pos.get("x", 0.0)), "y": float(pos.get("y", 0.0)), "z": 0.0})
 
-    state["position"] = {
-        "x": round(float((state.get("position") or {}).get("x", 0.0)), 3),
-        "y": round(float((state.get("position") or {}).get("y", 0.0)), 3),
-        "z": round(float((state.get("position") or {}).get("z", 0.0)), 3),
-    }
+    state["position"] = point_with_aliases(
+        {
+            "x": round(float((state.get("position") or {}).get("x", 0.0)), 7),
+            "y": round(float((state.get("position") or {}).get("y", 0.0)), 7),
+            "z": round(float((state.get("position") or {}).get("z", 0.0)), 3),
+        }
+    )
     state["battery_pct"] = round(max(0.0, min(100.0, float(state.get("battery_pct", 100.0) or 100.0))), 2)
     _control_stub_store_state(uav_id, state)
     return state
@@ -164,11 +195,18 @@ def _demo_seed_uav_prefix(user_id: str) -> str:
 
 def _demo_seed_waypoints(*, x0: float, y0: float, z0: float, seed_idx: int) -> list[dict[str, Any]]:
     cruise = min(110.0, max(38.0, z0 + 38.0 + seed_idx * 2.0))
+    if -180.0 <= x0 <= 180.0 and -90.0 <= y0 <= 90.0:
+        return [
+            point_with_aliases({"lon": x0, "lat": y0, "altM": z0, "action": "transit"}),
+            point_with_aliases({"lon": x0 + 0.006, "lat": y0 + 0.004, "altM": cruise, "action": "transit"}),
+            point_with_aliases({"lon": x0 + 0.012, "lat": y0 - 0.0035, "altM": min(120.0, cruise + 8.0), "action": "photo"}),
+            point_with_aliases({"lon": x0 + 0.017, "lat": y0 + 0.0055, "altM": cruise, "action": "inspect"}),
+        ]
     return [
-        {"x": x0, "y": y0, "z": z0, "action": "transit"},
-        {"x": min(400.0, x0 + 40.0), "y": min(300.0, y0 + 30.0), "z": cruise, "action": "transit"},
-        {"x": min(400.0, x0 + 95.0), "y": max(0.0, y0 - 18.0), "z": min(120.0, cruise + 8.0), "action": "photo"},
-        {"x": min(400.0, x0 + 150.0), "y": min(300.0, y0 + 35.0), "z": cruise, "action": "inspect"},
+        point_with_aliases({"x": x0, "y": y0, "z": z0, "action": "transit"}),
+        point_with_aliases({"x": min(400.0, x0 + 40.0), "y": min(300.0, y0 + 30.0), "z": cruise, "action": "transit"}),
+        point_with_aliases({"x": min(400.0, x0 + 95.0), "y": max(0.0, y0 - 18.0), "z": min(120.0, cruise + 8.0), "action": "photo"}),
+        point_with_aliases({"x": min(400.0, x0 + 150.0), "y": min(300.0, y0 + 35.0), "z": cruise, "action": "inspect"}),
     ]
 
 
@@ -349,9 +387,9 @@ def post_seed_demo_user_profiles(payload: UavDemoSeedPayload) -> Dict[str, Any]:
     for idx in range(count):
         uav_id = f"uav-{prefix}-{idx + 1}"
         operator_license_id = license_ids[idx % len(license_ids)]
-        x0 = float(35.0 + (idx * 55.0))
-        y0 = float(35.0 + ((idx % 4) * 60.0))
-        z0 = 0.0
+        x0 = float(24.816 + (idx * 0.008))
+        y0 = float(60.180 + ((idx % 4) * 0.006))
+        z0 = 35.0
         route_id = f"{uav_id}-demo-route-1"
         waypoints = _demo_seed_waypoints(x0=x0, y0=y0, z0=z0, seed_idx=idx)
 
@@ -493,6 +531,75 @@ def post_uav_mission_defaults(payload: UavMissionDefaultsPayload) -> Dict[str, A
 @router.get("/api/uav/sim/fleet")
 def get_sim_fleet() -> Dict[str, Any]:
     return {"status": "success", "sync": UAV_DB.get_sync(), "result": {"fleet": SIM.fleet_snapshot()}}
+
+
+@router.post("/api/uav/sim/fleet/reset-all")
+def post_reset_sim_fleet_all(
+    clear_registry: bool = True,
+    clear_history: bool = True,
+    clear_utm_artifacts: bool = True,
+) -> Dict[str, Any]:
+    existing = SIM.fleet_snapshot()
+    deleted_uav_ids = [str(uid) for uid in existing.keys() if str(uid).strip()]
+
+    for uid in deleted_uav_ids:
+        SIM.delete_uav(uid)
+
+    if clear_history:
+        UAV_DB.set_state("planned_route_history", {})
+        UAV_DB.set_state("approved_flight_path_history", {})
+        _set_mission_records(UAV_DB, {"by_scope": {}, "by_id": {}})
+        UTM_DB_MIRROR.set_state("approved_flight_path_history", {})
+        _set_mission_records(UTM_DB_MIRROR, {"by_scope": {}, "by_id": {}})
+        UAV_DB.set_state("uav_station_state", {})
+        UAV_DB.set_state("uav_station_control_log", [])
+
+    _set_uav_utm_sessions({})
+    UTM_SERVICE.approvals = {}
+
+    if clear_utm_artifacts:
+        _set_local_dss_operational_intents({})
+        UTM_DB_MIRROR.set_state("dss_notifications", [])
+        UTM_DB_MIRROR.set_state("dss_subscriptions", {})
+
+    if clear_registry:
+        registry = _get_uav_registry()
+        users = registry.get("users") if isinstance(registry.get("users"), dict) else {}
+        cleaned_users: Dict[str, Dict[str, Any]] = {}
+        now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        for user_id, row in users.items():
+            if not isinstance(user_id, str):
+                continue
+            next_row = dict(row) if isinstance(row, dict) else {}
+            next_row["uav_ids"] = []
+            next_row["updated_at"] = now_iso
+            cleaned_users[user_id] = next_row
+        if not cleaned_users:
+            cleaned_users = {"user-1": {"uav_ids": [], "updated_at": now_iso}}
+        _set_uav_registry({"users": cleaned_users, "uavs": {}})
+
+    NETWORK_MISSION_SERVICE.tracked_uavs = {}
+    NETWORK_MISSION_SERVICE.latest_live_telemetry = None
+
+    result = {
+        "deleted_count": len(deleted_uav_ids),
+        "deleted_uav_ids": deleted_uav_ids,
+        "fleet": SIM.fleet_snapshot(),
+        "latest_planned_routes": _latest_planned_routes_summary(),
+        "history_cleared": bool(clear_history),
+        "registry_cleared": bool(clear_registry),
+        "utm_artifacts_cleared": bool(clear_utm_artifacts),
+    }
+    sync = _log_uav_action(
+        "fleet_reset_all",
+        payload={
+            "clear_registry": bool(clear_registry),
+            "clear_history": bool(clear_history),
+            "clear_utm_artifacts": bool(clear_utm_artifacts),
+        },
+        result=result,
+    )
+    return {"status": "success", "sync": sync, "result": result}
 
 
 @router.get("/api/uav/sync")
@@ -742,17 +849,18 @@ def post_add_sim_uav(payload: FleetCreateUavPayload) -> Dict[str, Any]:
         while f"uav-{i}" in existing:
             i += 1
         uav_id = f"uav-{i}"
-    x = max(0.0, min(400.0, float(payload.x)))
-    y = max(0.0, min(300.0, float(payload.y)))
-    z = max(0.0, min(120.0, float(payload.z)))
+    lon = float(payload.lon if payload.lon is not None else payload.x)
+    lat = float(payload.lat if payload.lat is not None else payload.y)
+    z = max(0.0, min(120.0, float(payload.altM if payload.altM is not None else payload.z)))
+    x, y = _coerce_add_uav_lon_lat(lon, lat)
     SIM.ingest_live_state(
         uav_id,
-        position={"x": x, "y": y, "z": z},
+        position=point_with_aliases({"lon": x, "lat": y, "altM": z}),
         route_id=f"{uav_id}-route-1",
         source="simulated",
         source_meta={"created_by": "ui_map_add"},
     )
-    reset_route = _generate_reset_route_from_position({"x": x, "y": y, "z": z})
+    reset_route = _generate_reset_route_from_position(point_with_aliases({"lon": x, "lat": y, "altM": z}))
     SIM.plan_route(uav_id, route_id=f"{uav_id}-route-1", waypoints=reset_route)
     _assign_uav_to_user(
         user_id=_normalize_user_id(payload.user_id),

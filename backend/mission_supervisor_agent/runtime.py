@@ -18,6 +18,59 @@ def _clone_dict(value: Any) -> Dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _safe_text(value: Any, default: str = "") -> str:
+    out = str(value or "").strip()
+    return out if out else default
+
+
+def _trace_sender(row: Dict[str, Any]) -> str:
+    trace = row.get("protocol_trace")
+    if isinstance(trace, dict):
+        a2a = trace.get("a2a")
+        if isinstance(a2a, dict):
+            params = a2a.get("params")
+            if isinstance(params, dict):
+                msg = params.get("message")
+                if isinstance(msg, dict):
+                    metadata = msg.get("metadata")
+                    if isinstance(metadata, dict) and _safe_text(metadata.get("sender")):
+                        return _safe_text(metadata.get("sender"))
+            if _safe_text(a2a.get("sender")):
+                return _safe_text(a2a.get("sender"))
+    return "mission_supervisor"
+
+
+def _trace_receiver(row: Dict[str, Any]) -> str:
+    trace = row.get("protocol_trace")
+    if isinstance(trace, dict):
+        a2a = trace.get("a2a")
+        if isinstance(a2a, dict):
+            params = a2a.get("params")
+            if isinstance(params, dict):
+                msg = params.get("message")
+                if isinstance(msg, dict):
+                    metadata = msg.get("metadata")
+                    if isinstance(metadata, dict) and _safe_text(metadata.get("receiver")):
+                        return _safe_text(metadata.get("receiver"))
+            if _safe_text(a2a.get("receiver")):
+                return _safe_text(a2a.get("receiver"))
+    fallback = _safe_text(row.get("domain"), default="unknown")
+    return fallback
+
+
+def _mermaid_alias(index: int) -> str:
+    return f"p{index}"
+
+
+def _mermaid_label(row: Dict[str, Any]) -> str:
+    domain = _safe_text(row.get("domain"), default="unknown")
+    op = _safe_text(row.get("op"), default="unknown")
+    status = _safe_text(row.get("status"), default="unknown")
+    replayed = bool(row.get("replayed"))
+    mode = "replayed" if replayed else "live"
+    return f"{domain}.{op} [{status}, {mode}]"
+
+
 class MissionRuntimeService:
     """Runs mission supervisor workflows and persists mission snapshots/events."""
 
@@ -314,6 +367,39 @@ class MissionRuntimeService:
             )
         lim = max(1, min(2000, int(limit)))
         return rows[-lim:]
+
+    def get_protocol_trace_mermaid(self, mission_id: str, *, limit: int = 200, include_replayed: bool = True) -> str:
+        rows = self.get_protocol_trace(mission_id, limit=limit, include_replayed=include_replayed)
+        lines: List[str] = ["sequenceDiagram", "autonumber"]
+        if not rows:
+            lines.append("participant p0 as mission_supervisor")
+            lines.append("Note over p0: No protocol trace rows")
+            return "\n".join(lines)
+
+        participants: List[str] = []
+        for row in rows:
+            sender = _trace_sender(row)
+            receiver = _trace_receiver(row)
+            if sender not in participants:
+                participants.append(sender)
+            if receiver not in participants:
+                participants.append(receiver)
+
+        alias_map: Dict[str, str] = {}
+        for idx, name in enumerate(participants):
+            alias = _mermaid_alias(idx)
+            alias_map[name] = alias
+            lines.append(f"participant {alias} as {name}")
+
+        for row in rows:
+            sender = _trace_sender(row)
+            receiver = _trace_receiver(row)
+            left = alias_map.get(sender, "mission_supervisor")
+            right = alias_map.get(receiver, "unknown")
+            arrow = "-->>" if bool(row.get("replayed")) else "->>"
+            lines.append(f"{left}{arrow}{right}: {_mermaid_label(row)}")
+
+        return "\n".join(lines)
 
     def list_missions(self, *, limit: int = 50) -> List[Dict[str, Any]]:
         lim = max(1, min(200, int(limit)))

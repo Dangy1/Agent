@@ -17,10 +17,11 @@ try:
     from fastapi import FastAPI, Request
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse, JSONResponse
-    from pydantic import BaseModel
+    from pydantic import BaseModel, model_validator
 except Exception as e:  # pragma: no cover
     raise RuntimeError("utm_agent.api requires fastapi and pydantic") from e
 
+from geo_utils import normalize_no_fly_zones, normalize_waypoints
 from uav_agent.simulator import SIM
 from utm_agent.service import UTM_SERVICE, reserve_corridor_with_lease
 from utm_agent.operational_intents import (
@@ -77,6 +78,7 @@ from utm_agent.security_controls import (
     rotate_signing_key,
 )
 from agent_db import AgentDB
+from services.map_agent.map_agent_api import MAP_SERVICE_AGENT
 
 
 class WeatherPayload(BaseModel):
@@ -97,19 +99,55 @@ class LicensePayload(BaseModel):
 
 class NoFlyZonePayload(BaseModel):
     zone_id: Optional[str] = None
-    cx: float
-    cy: float
+    cx: Optional[float] = None
+    cy: Optional[float] = None
+    lon: Optional[float] = None
+    lat: Optional[float] = None
+    shape: str = "circle"
     radius_m: float = 30.0
     z_min: float = 0.0
     z_max: float = 120.0
     reason: str = "operator_defined"
 
+    @model_validator(mode="after")
+    def _normalize_geo(self) -> "NoFlyZonePayload":
+        lon = self.lon if self.lon is not None else self.cx
+        lat = self.lat if self.lat is not None else self.cy
+        if lon is None or lat is None:
+            raise ValueError("no-fly-zone requires lon/lat (or cx/cy compatibility fields)")
+        self.lon = float(lon)
+        self.lat = float(lat)
+        self.cx = float(self.lon)
+        self.cy = float(self.lat)
+        self.shape = "circle" if str(self.shape or "circle").strip().lower() == "circle" else "box"
+        return self
+
 
 class WaypointPayload(BaseModel):
-    x: float
-    y: float
-    z: float
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    lon: Optional[float] = None
+    lat: Optional[float] = None
+    altM: Optional[float] = None
     action: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _normalize_geo(self) -> "WaypointPayload":
+        lon = self.lon if self.lon is not None else self.x
+        lat = self.lat if self.lat is not None else self.y
+        alt_m = self.altM if self.altM is not None else self.z
+        if lon is None or lat is None:
+            raise ValueError("waypoint requires lon/lat (or x/y compatibility fields)")
+        if alt_m is None:
+            alt_m = 0.0
+        self.lon = float(lon)
+        self.lat = float(lat)
+        self.altM = float(alt_m)
+        self.x = float(self.lon)
+        self.y = float(self.lat)
+        self.z = float(self.altM)
+        return self
 
 
 class CorridorPayload(BaseModel):
@@ -500,7 +538,13 @@ def _persist_utm_state() -> None:
 
 def _log_utm_action(action: str, *, payload: Any = None, result: Any = None, entity_id: str | None = None) -> Dict[str, Any]:
     _persist_utm_state()
-    return UTM_DB.record_action(action, payload=payload, result=result, entity_id=entity_id)
+    sync = UTM_DB.record_action(action, payload=payload, result=result, entity_id=entity_id)
+    try:
+        MAP_SERVICE_AGENT.sync_utm_state(UTM_SERVICE.export_state(), scope="shared", source="utm")
+    except Exception:
+        # Keep UTM APIs resilient if map sync broker is unavailable.
+        pass
+    return sync
 
 
 _restore_utm_state()
@@ -947,12 +991,13 @@ def _queue_dss_notifications(
 
 def _resolve_route_input(uav_id: str, route_id: Optional[str], waypoints: Optional[List[WaypointPayload]]) -> tuple[str, list[dict], str]:
     if isinstance(waypoints, list) and waypoints:
-        return (str(route_id or "external-route"), [w.model_dump() for w in waypoints], "payload")
+        return (str(route_id or "external-route"), normalize_waypoints([w.model_dump() for w in waypoints]), "payload")
     rid, wps = _sim_waypoints(uav_id)
-    return (str(route_id or rid), wps, "simulator")
+    return (str(route_id or rid), normalize_waypoints(wps), "simulator")
 
 
 def _route_volume4d_from_waypoints(waypoints: list[dict], *, planned_start_at: str | None = None, planned_end_at: str | None = None) -> Dict[str, Any]:
+    waypoints = normalize_waypoints(waypoints)
     now = datetime.now(timezone.utc)
     start = planned_start_at or now.isoformat().replace("+00:00", "Z")
     end = planned_end_at or (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z")
@@ -964,9 +1009,9 @@ def _route_volume4d_from_waypoints(waypoints: list[dict], *, planned_start_at: s
             "time_start": start,
             "time_end": end,
         }
-    xs = [float(w.get("x", 0.0)) for w in waypoints]
-    ys = [float(w.get("y", 0.0)) for w in waypoints]
-    zs = [float(w.get("z", 0.0)) for w in waypoints]
+    xs = [float(w.get("lon", w.get("x", 0.0))) for w in waypoints]
+    ys = [float(w.get("lat", w.get("y", 0.0))) for w in waypoints]
+    zs = [float(w.get("altM", w.get("z", 0.0))) for w in waypoints]
     return {
         "x": [min(xs), max(xs)],
         "y": [min(ys), max(ys)],
@@ -1178,6 +1223,33 @@ def _resolve_project_relative_file(path_str: str) -> Optional[Path]:
     return resolved
 
 
+def _parse_bbox_csv(raw_bbox: Optional[str]) -> tuple[Optional[Dict[str, float]], Optional[str]]:
+    raw = str(raw_bbox or "").strip()
+    if not raw:
+        return None, None
+    parts = [p.strip() for p in raw.split(",")]
+    if len(parts) != 4:
+        return None, "bbox must have 4 comma-separated values: lon_min,lat_min,lon_max,lat_max"
+    try:
+        lon_a = float(parts[0])
+        lat_a = float(parts[1])
+        lon_b = float(parts[2])
+        lat_b = float(parts[3])
+    except Exception:
+        return None, "bbox values must be numbers"
+    if lon_a == lon_b or lat_a == lat_b:
+        return None, "bbox min/max values must differ"
+    lon_min = min(lon_a, lon_b)
+    lon_max = max(lon_a, lon_b)
+    lat_min = min(lat_a, lat_b)
+    lat_max = max(lat_a, lat_b)
+    if lon_min < -180.0 or lon_max > 180.0:
+        return None, "bbox longitude must be within [-180, 180]"
+    if lat_min < -90.0 or lat_max > 90.0:
+        return None, "bbox latitude must be within [-90, 90]"
+    return {"lon_min": lon_min, "lat_min": lat_min, "lon_max": lon_max, "lat_max": lat_max}, None
+
+
 @app.get("/api/utm/state")
 def get_utm_state(airspace_segment: str = "sector-A3", operator_license_id: Optional[str] = None) -> Dict[str, Any]:
     dss_runtime = _dss_runtime_snapshot()
@@ -1202,7 +1274,7 @@ def get_utm_state(airspace_segment: str = "sector-A3", operator_license_id: Opti
         subscriptions_degraded=dss_runtime.get("subscriptions_degraded"),
         subscriptions_failover_reason=dss_runtime.get("subscriptions_failover_reason"),
     )
-    return {
+    response = {
         "status": "success",
         "sync": UTM_DB.get_sync(),
         "dataSource": _utm_source_info(),
@@ -1210,7 +1282,7 @@ def get_utm_state(airspace_segment: str = "sector-A3", operator_license_id: Opti
             "airspace_segment": airspace_segment,
             "weather": UTM_SERVICE.get_weather(airspace_segment),
             "weatherChecks": weather_checks,
-            "noFlyZones": list(UTM_SERVICE.no_fly_zones),
+            "noFlyZones": normalize_no_fly_zones(UTM_SERVICE.no_fly_zones),
             "regulations": dict(UTM_SERVICE.regulations),
             "regulationProfiles": {k: dict(v) for k, v in UTM_SERVICE.regulation_profiles.items()},
             "effectiveRegulations": UTM_SERVICE.effective_regulations(operator_license_id),
@@ -1234,6 +1306,11 @@ def get_utm_state(airspace_segment: str = "sector-A3", operator_license_id: Opti
             "layeredStatus": layered,
         },
     }
+    try:
+        MAP_SERVICE_AGENT.sync_utm_state(response.get("result") if isinstance(response.get("result"), dict) else {}, scope="shared", source="utm")
+    except Exception:
+        pass
+    return response
 
 
 @app.get("/api/utm/live/source")
@@ -1241,12 +1318,36 @@ def get_utm_live_source() -> Dict[str, Any]:
     return {"status": "success", "sync": UTM_DB.get_sync(), "result": _utm_source_info()}
 
 
+@app.get("/api/utm/faa/airspace")
+def get_faa_airspace_geojson(
+    airspace_segment: str = "faa:*",
+    max_features: int = 300,
+    bbox: Optional[str] = None,
+    include_inactive: bool = False,
+    include_schedules: bool = False,
+) -> Dict[str, Any]:
+    parsed_bbox, bbox_error = _parse_bbox_csv(bbox)
+    if bbox_error:
+        return {"status": "error", "sync": UTM_DB.get_sync(), "error": "invalid_bbox", "detail": bbox_error}
+    result = UTM_SERVICE.query_faa_airspace_geojson(
+        airspace_segment=airspace_segment,
+        max_features=max_features,
+        bbox=parsed_bbox,
+        include_inactive=include_inactive,
+        include_schedules=include_schedules,
+    )
+    if str(result.get("status", "")).lower() != "ok":
+        err = str(result.get("status") or "faa_airspace_query_failed")
+        return {"status": "error", "sync": UTM_DB.get_sync(), "error": err, "result": result}
+    return {"status": "success", "sync": UTM_DB.get_sync(), "result": result}
+
+
 @app.post("/api/utm/live/ingest")
 def post_utm_live_ingest(payload: UtmLiveIngestPayload) -> Dict[str, Any]:
     if isinstance(payload.weather, dict):
         UTM_SERVICE.set_weather(payload.airspace_segment, **payload.weather)
     if isinstance(payload.no_fly_zones, list):
-        UTM_SERVICE.no_fly_zones = [dict(z) for z in payload.no_fly_zones if isinstance(z, dict)]
+        UTM_SERVICE.no_fly_zones = normalize_no_fly_zones(payload.no_fly_zones)
     if isinstance(payload.regulations, dict):
         UTM_SERVICE.regulations = dict(payload.regulations)
     if isinstance(payload.licenses, dict):
@@ -1259,8 +1360,7 @@ def post_utm_live_ingest(payload: UtmLiveIngestPayload) -> Dict[str, Any]:
         "airspace_segment": payload.airspace_segment,
     }
     UTM_DB.set_state("live_meta", meta)
-    _persist_utm_state()
-    sync = UTM_DB.record_action("utm_live_ingest", payload=payload.model_dump(), result={"dataSource": _utm_source_info()})
+    sync = _log_utm_action("utm_live_ingest", payload=payload.model_dump(), result={"dataSource": _utm_source_info()})
     return {"status": "success", "sync": sync, "result": {"dataSource": _utm_source_info()}}
 
 
@@ -1296,13 +1396,34 @@ def set_weather(payload: WeatherPayload) -> Dict[str, Any]:
 
 @app.get("/api/utm/nfz")
 def list_no_fly_zones() -> Dict[str, Any]:
-    return {"status": "success", "sync": UTM_DB.get_sync(), "result": {"no_fly_zones": UTM_SERVICE.no_fly_zones}}
+    return {"status": "success", "sync": UTM_DB.get_sync(), "result": {"no_fly_zones": normalize_no_fly_zones(UTM_SERVICE.no_fly_zones)}}
 
 
 @app.post("/api/utm/nfz")
 def add_no_fly_zone(payload: NoFlyZonePayload) -> Dict[str, Any]:
     result = UTM_SERVICE.add_no_fly_zone(**payload.model_dump())
     sync = _log_utm_action("add_no_fly_zone", payload=payload.model_dump(), result=result, entity_id=str(result.get("zone_id", "")))
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@app.put("/api/utm/nfz/{zone_id}")
+def update_no_fly_zone(zone_id: str, payload: NoFlyZonePayload) -> Dict[str, Any]:
+    row = payload.model_dump()
+    row["zone_id"] = str(zone_id)
+    result = UTM_SERVICE.add_no_fly_zone(**row)
+    sync = _log_utm_action("update_no_fly_zone", payload=row, result=result, entity_id=str(zone_id))
+    return {"status": "success", "sync": sync, "result": result}
+
+
+@app.delete("/api/utm/nfz/{zone_id}")
+def delete_no_fly_zone(zone_id: str) -> Dict[str, Any]:
+    zid = str(zone_id or "").strip()
+    zones = normalize_no_fly_zones(UTM_SERVICE.no_fly_zones)
+    kept = [dict(z) for z in zones if str(z.get("zone_id", "")).strip() != zid]
+    deleted = len(kept) != len(zones)
+    UTM_SERVICE.no_fly_zones = kept
+    result = {"zone_id": zid, "deleted": deleted, "remaining_count": len(kept)}
+    sync = _log_utm_action("delete_no_fly_zone", payload={"zone_id": zid}, result=result, entity_id=zid)
     return {"status": "success", "sync": sync, "result": result}
 
 

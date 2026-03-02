@@ -82,6 +82,7 @@ type DssMitigationSnapshot = {
   resolved: boolean;
   notes: string[];
 };
+type LiveGpsPoint = { lon: number; lat: number; altM: number };
 
 function isObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null;
@@ -234,6 +235,12 @@ function displayCount(value: unknown): string {
   return "N/A";
 }
 
+function uavRiskColor(risk?: MissionTrack["interferenceRisk"]): string {
+  if (risk === "high") return "#f04438";
+  if (risk === "medium") return "#f79009";
+  return "#12b76a";
+}
+
 function chipStyle(active = false): React.CSSProperties {
   return {
     borderRadius: 999,
@@ -303,10 +310,10 @@ const cardStyle: React.CSSProperties = {
 };
 
 const DEFAULT_SIM_ROUTE: UavWaypoint[] = [
-  { x: 0, y: 0, z: 0, action: "transit" },
-  { x: 100, y: 50, z: 40, action: "photo" },
-  { x: 220, y: 120, z: 55, action: "temperature" },
-  { x: 280, y: 180, z: 45, action: "inspect" },
+  { x: 24.8164, y: 60.1808, z: 60, action: "transit" },
+  { x: 24.8268, y: 60.1860, z: 70, action: "photo" },
+  { x: 24.8385, y: 60.1915, z: 68, action: "temperature" },
+  { x: 24.8502, y: 60.1968, z: 64, action: "inspect" },
 ];
 
 const WAYPOINT_ACTIONS: Array<{ value: WaypointAction; label: string }> = [
@@ -323,7 +330,7 @@ const MISSION_ACTION_CHOICES: Array<{ value: MissionActionType; label: string }>
   { value: "hover", label: "Hover" },
 ];
 const MIN_VISIBLE_WAYPOINT_ROWS = 5;
-const PLACEHOLDER_WAYPOINT_ROW: EditableWaypointRow = { x: "0", y: "0", z: "0", action: "transit", _wp_origin: "original" };
+const PLACEHOLDER_WAYPOINT_ROW: EditableWaypointRow = { x: "24.8164", y: "60.1808", z: "60", action: "transit", _wp_origin: "original" };
 
 const REGISTRY_PROFILE_TEXT_KEYS = [
   "uav_name",
@@ -630,6 +637,22 @@ function waypointToRow(wp: UavWaypoint): EditableWaypointRow {
   };
 }
 
+function waypointToGpsPayload(wp: UavWaypoint): Record<string, unknown> {
+  return {
+    lon: wp.x,
+    lat: wp.y,
+    altM: wp.z,
+    x: wp.x,
+    y: wp.y,
+    z: wp.z,
+    action: wp.action ?? "transit",
+    _wp_origin: wp._wp_origin,
+    _wp_source: wp._wp_source,
+    _mapped_from_original_index: wp._mapped_from_original_index,
+    _mapped_from_wp_source: wp._mapped_from_wp_source,
+  };
+}
+
 function isoUtcToLocalInput(iso: string): string {
   const dt = new Date(iso);
   if (Number.isNaN(dt.getTime())) return "";
@@ -658,11 +681,11 @@ function formatIsoSummary(value: unknown): string {
 function formatPathPointBrief(point: unknown): string {
   const p = asRecord(point);
   if (!p) return "-";
-  const x = Number(p.x ?? NaN);
-  const y = Number(p.y ?? NaN);
-  const z = Number(p.z ?? NaN);
+  const x = Number(p.lon ?? p.x ?? NaN);
+  const y = Number(p.lat ?? p.y ?? NaN);
+  const z = Number(p.altM ?? p.z ?? NaN);
   if (![x, y, z].every(Number.isFinite)) return "-";
-  return `${x.toFixed(0)},${y.toFixed(0)},${z.toFixed(0)}`;
+  return `${x.toFixed(5)},${y.toFixed(5)},${z.toFixed(1)}`;
 }
 
 function formatFlightTimeBrief(seconds: unknown): string {
@@ -826,8 +849,12 @@ export function UavPage() {
   const [missionDefaultsScopeKey, setMissionDefaultsScopeKey] = useState("");
   const [autoFlyEnabled, setAutoFlyEnabled] = useState(false);
   const [missionActionChoice, setMissionActionChoice] = useState<MissionActionType>("photo");
+  const [liveGpsHmPoint, setLiveGpsHmPoint] = useState<LiveGpsPoint | null>(null);
+  const [liveGpsHmError, setLiveGpsHmError] = useState("");
   const autoFlyCycleBusyRef = useRef(false);
   const autoFlyLastWaypointRef = useRef<number>(-1);
+  const routeEditorDirtyRef = useRef(false);
+  const hmAutoFillRef = useRef<{ uavId: string; lon: number; lat: number; altM: number } | null>(null);
   const uavRef = useRef<Record<string, unknown> | null>(null);
 
   useEffect(() => {
@@ -835,9 +862,88 @@ export function UavPage() {
   }, [simUavId, autoFlyEnabled]);
 
   useEffect(() => {
+    routeEditorDirtyRef.current = false;
+    hmAutoFillRef.current = null;
+  }, [simUavId]);
+
+  useEffect(() => {
     setLastUtmSubmitResult(null);
     setLastDssMitigation(null);
   }, [simUavId, ownerUserId]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLiveGpsHmError("Browser geolocation unavailable.");
+      return;
+    }
+    let active = true;
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        if (!active) return;
+        const c = position.coords;
+        setLiveGpsHmPoint({
+          lon: Number(c.longitude),
+          lat: Number(c.latitude),
+          altM: Number(c.altitude ?? 40),
+        });
+        setLiveGpsHmError("");
+      },
+      (err) => {
+        if (!active) return;
+        setLiveGpsHmError(String(err?.message || `Geolocation error (${String(err?.code ?? "unknown")})`));
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 },
+    );
+    return () => {
+      active = false;
+      try {
+        navigator.geolocation.clearWatch(watchId);
+      } catch {
+        // ignore geolocation cleanup failures
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!liveGpsHmPoint) return;
+    const lon = Number(liveGpsHmPoint.lon.toFixed(6));
+    const lat = Number(liveGpsHmPoint.lat.toFixed(6));
+    const lonStr = lon.toFixed(6);
+    const latStr = lat.toFixed(6);
+    const fallbackAlt = Number.isFinite(liveGpsHmPoint.altM) ? Number(liveGpsHmPoint.altM.toFixed(1)) : 40;
+    setRouteRows((rows) => {
+      const next = rows.slice();
+      const first = next[0];
+      if (!first) {
+        hmAutoFillRef.current = { uavId: simUavId, lon, lat, altM: fallbackAlt };
+        next.unshift({
+          x: lonStr,
+          y: latStr,
+          z: String(fallbackAlt),
+          action: "transit",
+          _wp_origin: "original",
+        });
+        return next;
+      }
+      const firstLon = Number(first.x);
+      const firstLat = Number(first.y);
+      const firstAlt = Number(first.z);
+      const currentAlt = Number.isFinite(firstAlt) ? firstAlt : fallbackAlt;
+      const isZeroHome = Number.isFinite(firstLon) && Number.isFinite(firstLat) && Math.abs(firstLon) < 1e-6 && Math.abs(firstLat) < 1e-6;
+      const lastAuto = hmAutoFillRef.current;
+      const matchesLastAuto = !!lastAuto
+        && lastAuto.uavId === simUavId
+        && Number.isFinite(firstLon)
+        && Number.isFinite(firstLat)
+        && Math.abs(firstLon - lastAuto.lon) < 1e-6
+        && Math.abs(firstLat - lastAuto.lat) < 1e-6;
+      if (!isZeroHome && !matchesLastAuto) return rows;
+      if (String(first.x) === lonStr && String(first.y) === latStr && Number(first.z) === currentAlt) return rows;
+      hmAutoFillRef.current = { uavId: simUavId, lon, lat, altM: currentAlt };
+      next[0] = { ...first, x: lonStr, y: latStr, z: String(currentAlt) };
+      return next;
+    });
+  }, [liveGpsHmPoint, simUavId]);
 
   const loadState = async () => {
     setBusy(true);
@@ -935,9 +1041,9 @@ export function UavPage() {
         ? (uavObj!.waypoints as unknown[])
             .filter(isObject)
             .map((w) => ({
-              x: Number((w as Record<string, unknown>).x ?? 0),
-              y: Number((w as Record<string, unknown>).y ?? 0),
-              z: Number((w as Record<string, unknown>).z ?? 0),
+              x: Number((w as Record<string, unknown>).lon ?? (w as Record<string, unknown>).x ?? 0),
+              y: Number((w as Record<string, unknown>).lat ?? (w as Record<string, unknown>).y ?? 0),
+              z: Number((w as Record<string, unknown>).altM ?? (w as Record<string, unknown>).z ?? 0),
               action: String((w as Record<string, unknown>).action ?? "transit") as WaypointAction,
               _wp_origin: String((w as Record<string, unknown>)._wp_origin ?? "original") === "agent_inserted" ? "agent_inserted" as const : "original" as const,
               _wp_source: typeof (w as Record<string, unknown>)._wp_source === "string" ? String((w as Record<string, unknown>)._wp_source) : undefined,
@@ -953,7 +1059,7 @@ export function UavPage() {
             .filter((w) => Number.isFinite(w.x) && Number.isFinite(w.y) && Number.isFinite(w.z))
         : [];
       const rawWpCount = Array.isArray(uavObj?.waypoints) ? (uavObj!.waypoints as unknown[]).length : -1;
-      if (backendPoints.length >= 2 || rawWpCount === 0) {
+      if (!routeEditorDirtyRef.current && (backendPoints.length >= 2 || rawWpCount === 0)) {
         // Keep route waypoints as planned from backend; only UAV position should move during flight.
         setRouteRows(backendPoints.map(waypointToRow));
       }
@@ -1015,14 +1121,20 @@ export function UavPage() {
             }))
           : [];
         const tracks = Array.isArray(result?.trackingSnapshots)
-          ? (result!.trackingSnapshots as unknown[]).filter(isObject).map((t) => ({
-              id: String((t as Record<string, unknown>).id ?? "uav"),
-              x: Number((t as Record<string, unknown>).x ?? 0),
-              y: Number((t as Record<string, unknown>).y ?? 0),
-              z: Number((t as Record<string, unknown>).z ?? 0),
-              attachedBsId: String((t as Record<string, unknown>).attachedBsId ?? ""),
-              interferenceRisk: String((t as Record<string, unknown>).interferenceRisk ?? "low") as MissionTrack["interferenceRisk"],
-            }))
+          ? (result!.trackingSnapshots as unknown[]).filter(isObject).map((t) => {
+              const heading = Number((t as Record<string, unknown>).headingDeg ?? NaN);
+              const speed = Number((t as Record<string, unknown>).speedMps ?? NaN);
+              return {
+                id: String((t as Record<string, unknown>).id ?? "uav"),
+                x: Number((t as Record<string, unknown>).x ?? 0),
+                y: Number((t as Record<string, unknown>).y ?? 0),
+                z: Number((t as Record<string, unknown>).z ?? 0),
+                headingDeg: Number.isFinite(heading) ? heading : undefined,
+                speedMps: Number.isFinite(speed) ? speed : undefined,
+                attachedBsId: String((t as Record<string, unknown>).attachedBsId ?? ""),
+                interferenceRisk: String((t as Record<string, unknown>).interferenceRisk ?? "low") as MissionTrack["interferenceRisk"],
+              };
+            })
           : [];
         setNetworkMap({ bs, coverage, tracks });
       } catch {
@@ -1208,7 +1320,11 @@ export function UavPage() {
 
   const addUavAtPoint = async (point: { x: number; y: number; z?: number }) => {
     const z = Number.isFinite(point.z ?? NaN) ? Number(point.z) : 0;
-    const res = await postApi("/api/uav/sim/fleet/add", { user_id: ownerUserId, operator_license_id: simOperatorLicenseId, x: point.x, y: point.y, z }, "UAV added from map");
+    const res = await postApi(
+      "/api/uav/sim/fleet/add",
+      { user_id: ownerUserId, operator_license_id: simOperatorLicenseId, lon: point.x, lat: point.y, altM: z, x: point.x, y: point.y, z },
+      "UAV added from map",
+    );
     const resultRec = asRecord(asRecord(res)?.result);
     const uavObj = asRecord(resultRec?.uav);
     const newId = typeof uavObj?.uav_id === "string" ? uavObj.uav_id : null;
@@ -1235,6 +1351,7 @@ export function UavPage() {
       setSimUavId(fallbackId);
       if (candidateIds.length === 0) {
         setRouteRows(DEFAULT_SIM_ROUTE.map(waypointToRow));
+        routeEditorDirtyRef.current = false;
         setSimRouteId("demo-route");
       }
       setMsg(`Deleted ${uiUavLabel(victim)}`);
@@ -1262,11 +1379,13 @@ export function UavPage() {
       const x = Number(row.x);
       const y = Number(row.y);
       const z = Number(row.z);
-      if (!Number.isFinite(x)) rowErrors[idx].push("x");
-      if (!Number.isFinite(y)) rowErrors[idx].push("y");
-      if (!Number.isFinite(z)) rowErrors[idx].push("z");
-      if (Number.isFinite(z) && z < 0) rowErrors[idx].push("z<0");
-      if (Number.isFinite(z) && z > maxAlt) rowErrors[idx].push(`z>${maxAlt}`);
+      if (!Number.isFinite(x)) rowErrors[idx].push("lon");
+      if (!Number.isFinite(y)) rowErrors[idx].push("lat");
+      if (!Number.isFinite(z)) rowErrors[idx].push("altM");
+      if (Number.isFinite(x) && (x < -180 || x > 180)) rowErrors[idx].push("lon_out_of_range");
+      if (Number.isFinite(y) && (y < -90 || y > 90)) rowErrors[idx].push("lat_out_of_range");
+      if (Number.isFinite(z) && z < 0) rowErrors[idx].push("altM<0");
+      if (Number.isFinite(z) && z > maxAlt) rowErrors[idx].push(`altM>${maxAlt}`);
       if (rowErrors[idx].length === 0) {
         waypoints.push({
           x,
@@ -1292,7 +1411,13 @@ export function UavPage() {
     }
     const routeId = normalizeRouteIdBase(simRouteId);
     setSimRouteId(routeId);
-    return postApi("/api/uav/live/plan", { user_id: ownerUserId, uav_id: simUavId, route_id: routeId, waypoints: routeValidation.waypoints }, "Route planned");
+    const res = await postApi(
+      "/api/uav/live/plan",
+      { user_id: ownerUserId, uav_id: simUavId, route_id: routeId, waypoints: routeValidation.waypoints.map(waypointToGpsPayload) },
+      "Route planned",
+    );
+    if (res) routeEditorDirtyRef.current = false;
+    return res;
   };
 
   const buildVerifyInput = () => {
@@ -1446,6 +1571,7 @@ export function UavPage() {
       return;
     }
     setRouteRows(rows.map((r) => ({ ...r })));
+    routeEditorDirtyRef.current = false;
     const srcRow = asRecord(missionPaths?.[source]);
     const srcRouteId = typeof srcRow?.route_id === "string" ? srcRow.route_id : null;
     if (srcRouteId) setSimRouteId(srcRouteId);
@@ -1528,7 +1654,7 @@ export function UavPage() {
     const y = Number(pos?.y);
     const z = Number(pos?.z);
     if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
-      payload.position = { x, y, z };
+      payload.position = { lon: x, lat: y, altM: z, x, y, z };
     }
     const wpIdx = Number(uav?.waypoint_index);
     if (Number.isFinite(wpIdx)) payload.waypoint_index = Math.max(0, Math.trunc(wpIdx));
@@ -1718,7 +1844,7 @@ export function UavPage() {
           airspace_segment: simAirspace,
           prompt: outgoingPrompt,
           route_id: normalizeRouteIdBase(simRouteId),
-          waypoints: routeValidation.waypoints,
+          waypoints: routeValidation.waypoints.map(waypointToGpsPayload),
           optimization_profile: effectiveProfile,
           operator_license_id: effectiveOperatorLicenseId,
           network_mode: effectiveNetworkMode,
@@ -1757,7 +1883,10 @@ export function UavPage() {
             }))
         : [];
       if (nextRouteId) setSimRouteId(nextRouteId);
-      if (points.length >= 2) setRouteRows(points.map(waypointToRow));
+      if (points.length >= 2) {
+        setRouteRows(points.map(waypointToRow));
+        routeEditorDirtyRef.current = false;
+      }
       if (replanSucceeded) {
         if (dssReplanDetected) {
           setPlannerEditorSource("dss_replanned");
@@ -2756,24 +2885,45 @@ export function UavPage() {
           zone_id: String((z as Record<string, unknown>).zone_id ?? "nfz"),
           cx: Number((z as Record<string, unknown>).cx ?? 0),
           cy: Number((z as Record<string, unknown>).cy ?? 0),
+          shape: String((z as Record<string, unknown>).shape ?? "circle").toLowerCase() === "box" ? "box" : "circle",
           radius_m: Number((z as Record<string, unknown>).radius_m ?? 0),
           z_min: Number((z as Record<string, unknown>).z_min ?? 0),
           z_max: Number((z as Record<string, unknown>).z_max ?? 120),
           reason: String((z as Record<string, unknown>).reason ?? ""),
         }))
     : [];
+  const networkTrackById = new Map(networkMap.tracks.map((track) => [track.id, track]));
   const allFleetTracksForMap: MissionTrack[] = Object.entries(fleetState).map(([id, snap]) => {
     const pos = asRecord(snap.position);
+    const netTrack = networkTrackById.get(id);
+    const heading = Number(snap.heading_deg ?? snap.headingDeg ?? pos?.heading_deg ?? pos?.headingDeg ?? netTrack?.headingDeg ?? NaN);
+    const speed = Number(
+      snap.velocity_mps
+      ?? snap.speed_mps
+      ?? snap.speedMps
+      ?? pos?.velocity_mps
+      ?? pos?.speed_mps
+      ?? pos?.speedMps
+      ?? netTrack?.speedMps
+      ?? NaN,
+    );
     return {
       id,
       x: Number(pos?.x ?? 0),
       y: Number(pos?.y ?? 0),
       z: Number(pos?.z ?? 0),
-      attachedBsId: "",
-      interferenceRisk: "low",
+      headingDeg: Number.isFinite(heading) ? heading : netTrack?.headingDeg,
+      speedMps: Number.isFinite(speed) ? speed : netTrack?.speedMps,
+      attachedBsId: netTrack?.attachedBsId ?? "",
+      interferenceRisk: netTrack?.interferenceRisk ?? "low",
     };
   });
-  // Planner map uses editor waypoints; live map should use backend-authoritative route for cross-page synchronization.
+  const selectedPlannerTrack = allFleetTracksForMap.find((track) => track.id === simUavId) ?? allFleetTracksForMap[0] ?? null;
+  const selectedPlannerFleet = selectedPlannerTrack ? asRecord(fleetState[selectedPlannerTrack.id]) : null;
+  const selectedPlannerBatteryPct = Number(selectedPlannerFleet?.battery_pct ?? NaN);
+  const selectedPlannerArmed = selectedPlannerFleet?.armed === true;
+  const selectedPlannerActive = selectedPlannerFleet?.active === true;
+  // Planner map should reflect editor waypoints immediately; backend route is fallback when editor has no valid points yet.
   const routePointsForMap = routeValidation.waypoints.map((w) => ({ x: w.x, y: w.y, z: w.z }));
   const backendRoutePointsForMap = Array.isArray(uav?.waypoints)
     ? (uav.waypoints as unknown[])
@@ -2826,6 +2976,7 @@ export function UavPage() {
     return base;
   }, [routeRows]);
   const upsertRouteRow = (idx: number, update: (row: EditableWaypointRow) => EditableWaypointRow) => {
+    routeEditorDirtyRef.current = true;
     setRouteRows((rows) => {
       const next = rows.slice();
       while (next.length <= idx) next.push({ ...PLACEHOLDER_WAYPOINT_ROW });
@@ -3231,14 +3382,76 @@ export function UavPage() {
                 Selected UAV is highlighted. Other UAVs and their latest paths are shown in gray for scheduling context.
               </div>
             </div>
+            {selectedPlannerTrack ? (
+              <div
+                style={{
+                  border: "1px solid #d1e0ff",
+                  borderRadius: 10,
+                  background: "linear-gradient(160deg, #f5f8ff 0%, #ffffff 60%, #f8fcff 100%)",
+                  padding: "8px 10px",
+                  display: "grid",
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#101828" }}>
+                    Selected UAV <code>{selectedPlannerTrack.id}</code>
+                  </div>
+                  <span
+                    style={{
+                      borderRadius: 999,
+                      border: `1px solid ${uavRiskColor(selectedPlannerTrack.interferenceRisk)}66`,
+                      background: `${uavRiskColor(selectedPlannerTrack.interferenceRisk)}14`,
+                      color: uavRiskColor(selectedPlannerTrack.interferenceRisk),
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      padding: "2px 8px",
+                    }}
+                  >
+                    {String(selectedPlannerTrack.interferenceRisk ?? "low")} risk
+                  </span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Position</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>
+                      ({selectedPlannerTrack.x.toFixed(1)}, {selectedPlannerTrack.y.toFixed(1)}, {selectedPlannerTrack.z?.toFixed(1) ?? "0.0"})
+                    </div>
+                  </div>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Heading / Speed</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#101828" }}>
+                      {Number.isFinite(selectedPlannerTrack.headingDeg) ? `${Math.round(Number(selectedPlannerTrack.headingDeg))}°` : "-"} /{" "}
+                      {Number.isFinite(selectedPlannerTrack.speedMps) ? `${Number(selectedPlannerTrack.speedMps).toFixed(1)} m/s` : "-"}
+                    </div>
+                  </div>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Armed / Active</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: selectedPlannerArmed && selectedPlannerActive ? "#027a48" : "#475467" }}>
+                      {selectedPlannerArmed ? "Yes" : "No"} / {selectedPlannerActive ? "Yes" : "No"}
+                    </div>
+                  </div>
+                  <div style={{ border: "1px solid #eaecf0", borderRadius: 8, background: "#fff", padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <div style={{ fontSize: 11, color: "#667085" }}>Battery / BS</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: Number.isFinite(selectedPlannerBatteryPct) && selectedPlannerBatteryPct < 25 ? "#b42318" : "#101828" }}>
+                      {Number.isFinite(selectedPlannerBatteryPct) ? `${selectedPlannerBatteryPct.toFixed(0)}%` : "-"} / {selectedPlannerTrack.attachedBsId || "N/A"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div style={{ border: "1px solid #eaecf0", borderRadius: 10, background: "#fff", padding: 6 }}>
           <MissionSyncMap
             title=""
-            route={backendRoutePointsForMap.length ? backendRoutePointsForMap : routePointsForMap}
-            plannedPosition={backendPlannedPosForMap ?? plannedPosForMap}
+            route={routePointsForMap.length ? routePointsForMap : backendRoutePointsForMap}
+            plannedPosition={plannedPosForMap ?? backendPlannedPosForMap}
             trackedPositions={allFleetTracksForMap}
+            mapServiceBase={getSharedPageState().networkApiBase || "http://127.0.0.1:8022"}
             selectedUavId={simUavId}
             noFlyZones={nfzZones}
+            coordinateMode="geo"
+                  trackMarkerStyle="uav"
                   baseStations={networkMap.bs}
                   coverage={networkMap.coverage}
                   routeOverlays={extraRoutesForMap}
@@ -3259,6 +3472,7 @@ export function UavPage() {
                         }
                       : null;
                     const z = routeRows.length ? Number(routeRows[routeRows.length - 1]?.z || "40") : Number(currentWp?.z ?? 40);
+                    routeEditorDirtyRef.current = true;
                     setRouteRows((rows) => {
                       const next = rows.slice();
                       const routeHomeWpRaw = Array.isArray(uav?.waypoints) ? (uav.waypoints as unknown[]).find((w) => isObject(w)) : null;
@@ -3294,6 +3508,7 @@ export function UavPage() {
             </div>
             <div style={{ fontSize: 11, color: "#667085" }}>
               Choosing a UAV (and license) refreshes backend state so the mission planner map and waypoint editor update automatically for that UAV. Map click can add waypoints for the selected UAV or add a new UAV (based on `Map Click` mode).
+              {liveGpsHmError ? ` HM auto-fill: ${liveGpsHmError}` : " HM auto-fill uses your current GPS for waypoint 0 (HM)."}
             </div>
             <div style={{ border: "1px solid #eaecf0", borderRadius: 10, background: "#fff", overflowX: "auto" }}>
               <div style={{ minWidth: 740 }}>
@@ -3301,9 +3516,9 @@ export function UavPage() {
                 <div>Seq</div>
                 <div>Type</div>
                 <div>Src</div>
-                <div>X</div>
-                <div>Y</div>
-                <div>Z (m)</div>
+                <div>Lon</div>
+                <div>Lat</div>
+                <div>AltM</div>
                 <div style={{ position: "sticky", right: missionTableActionStickyRight, background: "#f8fafc", zIndex: 1, paddingLeft: 4 }}>Action</div>
               </div>
               <div style={{ display: "grid", gap: 5, height: missionTableRowViewportHeight, overflowY: "auto", padding: 6 }}>
@@ -3342,9 +3557,9 @@ export function UavPage() {
                         );
                       })()}
                     </div>
-                    <input style={{ ...inputStyle, padding: "5px 6px", borderColor: errs.some((e) => e.startsWith("x")) ? "#f04438" : "#d0d5dd" }} value={row.x} onChange={(e) => upsertRouteRow(idx, (r) => ({ ...r, x: e.target.value }))} placeholder="x" />
-                    <input style={{ ...inputStyle, padding: "5px 6px", borderColor: errs.some((e) => e.startsWith("y")) ? "#f04438" : "#d0d5dd" }} value={row.y} onChange={(e) => upsertRouteRow(idx, (r) => ({ ...r, y: e.target.value }))} placeholder="y" />
-                    <input style={{ ...inputStyle, padding: "5px 6px", borderColor: errs.some((e) => e.startsWith("z")) ? "#f04438" : "#d0d5dd" }} value={row.z} onChange={(e) => upsertRouteRow(idx, (r) => ({ ...r, z: e.target.value }))} placeholder="z" />
+                    <input style={{ ...inputStyle, padding: "5px 6px", borderColor: errs.some((e) => e.startsWith("lon")) ? "#f04438" : "#d0d5dd" }} value={row.x} onChange={(e) => upsertRouteRow(idx, (r) => ({ ...r, x: e.target.value }))} placeholder="lon" />
+                    <input style={{ ...inputStyle, padding: "5px 6px", borderColor: errs.some((e) => e.startsWith("lat")) ? "#f04438" : "#d0d5dd" }} value={row.y} onChange={(e) => upsertRouteRow(idx, (r) => ({ ...r, y: e.target.value }))} placeholder="lat" />
+                    <input style={{ ...inputStyle, padding: "5px 6px", borderColor: errs.some((e) => e.startsWith("altM")) ? "#f04438" : "#d0d5dd" }} value={row.z} onChange={(e) => upsertRouteRow(idx, (r) => ({ ...r, z: e.target.value }))} placeholder="altM" />
                     <div style={{ position: "sticky", right: missionTableActionStickyRight, background: "#fcfcfd", zIndex: 1, paddingLeft: 4, display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "center" }}>
                       <select style={{ ...inputStyle, padding: "5px 6px", minWidth: 0 }} value={row.action} onChange={(e) => upsertRouteRow(idx, (r) => ({ ...r, action: e.target.value as WaypointAction }))}>
                         {WAYPOINT_ACTIONS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
@@ -3353,6 +3568,7 @@ export function UavPage() {
                         type="button"
                         style={{ ...chipStyle(false), padding: "4px 8px", borderColor: "#fda29b", color: "#b42318", background: "#fff5f4", fontWeight: 700 }}
                         onClick={() => {
+                          routeEditorDirtyRef.current = true;
                           setRouteRows((rows) => rows.filter((_, i) => i !== idx));
                         }}
                         disabled={isPlaceholderRow || idx >= routeRows.length}
@@ -3392,6 +3608,7 @@ export function UavPage() {
                   type="button"
                   style={chipStyle(false)}
                   onClick={() => {
+                    routeEditorDirtyRef.current = true;
                     setRouteRows([]);
                     setMsg("Mission planner waypoints cleared");
                   }}

@@ -69,19 +69,22 @@ def uav_submit_route_to_utm_geofence_check(
     sim = SIM.status(uav_id)
     waypoints = list(sim.get("waypoints", [])) if isinstance(sim.get("waypoints"), list) else []
     nfz = UTM_SERVICE.check_no_fly_zones(waypoints)
-    bounds = {"sector-A3": {"x": [0, 400], "y": [0, 300], "z": [0, 120]}}
-    seg = bounds.get(airspace_segment, {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0, 120]})
-    out_of_bounds = []
-    for i, wp in enumerate(waypoints):
-        x = float(wp.get("x", 0.0))
-        y = float(wp.get("y", 0.0))
-        z = float(wp.get("z", 0.0))
-        if not (seg["x"][0] <= x <= seg["x"][1] and seg["y"][0] <= y <= seg["y"][1] and seg["z"][0] <= z <= seg["z"][1]):
-            out_of_bounds.append({"index": i, "wp": {"x": x, "y": y, "z": z}})
+    route_bounds = UTM_SERVICE.check_route_bounds(airspace_segment, waypoints)
+    out_of_bounds = list(route_bounds.get("out_of_bounds") or [])
+    bounds_ok = bool(
+        route_bounds.get("ok") is True
+        or route_bounds.get("geofence_ok") is True
+        or route_bounds.get("bounds_ok") is True
+    )
     geofence_result = {
-        "ok": len(out_of_bounds) == 0 and nfz.get("ok", False),
+        "ok": bool(bounds_ok and nfz.get("ok", False)),
+        "geofence_ok": bounds_ok,
+        "bounds_ok": bounds_ok,
         "airspace_segment": airspace_segment,
         "out_of_bounds": out_of_bounds,
+        "bounds": route_bounds.get("bounds"),
+        "matched_airspace": route_bounds.get("matched_airspace"),
+        "source": route_bounds.get("source"),
         "no_fly_zone": nfz,
     }
     SIM.set_geofence_result(uav_id, geofence_result)

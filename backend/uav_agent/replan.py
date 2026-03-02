@@ -6,6 +6,16 @@ from typing import Any, List
 
 from langchain.tools import tool
 
+from geo_utils import (
+    extract_lon_lat_alt,
+    extract_zone_center,
+    is_valid_lon_lat,
+    local_xy_m_from_lon_lat,
+    lon_lat_from_local_xy_m,
+    normalize_no_fly_zones,
+    normalize_waypoints,
+    point_with_aliases,
+)
 from .simulator import SIM
 from network_agent.service import NETWORK_MISSION_SERVICE
 from utm_agent.service import UTM_SERVICE
@@ -66,6 +76,89 @@ def _normalize_route_id_base(route_id: str | None) -> str:
                 rid = rid[: -len(s)] or "route-1"
                 changed = True
     return rid
+
+
+def _route_ref_origin(waypoints: list[dict[str, Any]], zones: list[dict[str, Any]]) -> tuple[float, float]:
+    samples: list[tuple[float, float]] = []
+    for wp in waypoints:
+        lon, lat, _alt = extract_lon_lat_alt(wp)
+        if is_valid_lon_lat(lon, lat):
+            samples.append((lon, lat))
+    for zone in zones:
+        lon, lat = extract_zone_center(zone)
+        if is_valid_lon_lat(lon, lat):
+            samples.append((lon, lat))
+    if not samples:
+        return 0.0, 0.0
+    lon_avg = sum(p[0] for p in samples) / len(samples)
+    lat_avg = sum(p[1] for p in samples) / len(samples)
+    return float(lon_avg), float(lat_avg)
+
+
+def _geo_to_local_point(wp: dict[str, Any], *, ref_lon: float, ref_lat: float) -> dict[str, Any]:
+    lon, lat, alt_m = extract_lon_lat_alt(wp)
+    x_m, y_m = local_xy_m_from_lon_lat(lon, lat, ref_lon=ref_lon, ref_lat=ref_lat)
+    out = dict(wp)
+    out["x"] = float(x_m)
+    out["y"] = float(y_m)
+    out["z"] = float(alt_m)
+    out["_geo_lon"] = float(lon)
+    out["_geo_lat"] = float(lat)
+    out["_geo_altM"] = float(alt_m)
+    return out
+
+
+def _local_to_geo_point(wp: dict[str, Any], *, ref_lon: float, ref_lat: float) -> dict[str, Any]:
+    x = float(wp.get("x", 0.0))
+    y = float(wp.get("y", 0.0))
+    z = float(wp.get("z", 0.0))
+    lon, lat = lon_lat_from_local_xy_m(x, y, ref_lon=ref_lon, ref_lat=ref_lat)
+    out = dict(wp)
+    out.update(point_with_aliases({"lon": lon, "lat": lat, "altM": z}))
+    return out
+
+
+def _dict_looks_like_local_point(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    x = value.get("x")
+    y = value.get("y")
+    return isinstance(x, (int, float)) and isinstance(y, (int, float))
+
+
+def _convert_nested_local_points_to_geo(value: Any, *, ref_lon: float, ref_lat: float) -> Any:
+    if isinstance(value, list):
+        return [_convert_nested_local_points_to_geo(v, ref_lon=ref_lon, ref_lat=ref_lat) for v in value]
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            out[k] = _convert_nested_local_points_to_geo(v, ref_lon=ref_lon, ref_lat=ref_lat)
+        if _dict_looks_like_local_point(value):
+            local_pt = {
+                "x": float(value.get("x", 0.0)),
+                "y": float(value.get("y", 0.0)),
+                "z": float(value.get("z", value.get("altM", 0.0))),
+            }
+            geo_pt = _local_to_geo_point(local_pt, ref_lon=ref_lon, ref_lat=ref_lat)
+            out["lon"] = float(geo_pt["lon"])
+            out["lat"] = float(geo_pt["lat"])
+            out["altM"] = float(geo_pt["altM"])
+            out["x"] = float(geo_pt["x"])
+            out["y"] = float(geo_pt["y"])
+            out["z"] = float(geo_pt["z"])
+        return out
+    return value
+
+
+def _geo_to_local_zone(zone: dict[str, Any], *, ref_lon: float, ref_lat: float) -> dict[str, Any]:
+    z = dict(zone)
+    lon, lat = extract_zone_center(z)
+    x_m, y_m = local_xy_m_from_lon_lat(lon, lat, ref_lon=ref_lon, ref_lat=ref_lat)
+    z["cx"] = float(x_m)
+    z["cy"] = float(y_m)
+    z["lon"] = float(lon)
+    z["lat"] = float(lat)
+    return z
 
 
 def _parse_replan_preferences(user_request: str, optimization_profile: str = "balanced") -> dict[str, Any]:
@@ -975,7 +1068,19 @@ def uav_replan_route_via_utm_nfz(
     """Fetch UTM no-fly-zones and replan current simulated route to avoid NFZs using a simple heuristic."""
     sim = SIM.status(uav_id)
     current_raw = [dict(w) for w in waypoints] if isinstance(waypoints, list) else (list(sim.get("waypoints", [])) if isinstance(sim.get("waypoints"), list) else [])
-    current = [_mark_original_waypoint(w) for w in current_raw]
+    current_geo = normalize_waypoints(current_raw)
+    current_geo = [_mark_original_waypoint(w) for w in current_geo]
+    zones_geo = normalize_no_fly_zones(list(UTM_SERVICE.no_fly_zones))
+    geo_mode = bool(current_geo) and all(is_valid_lon_lat(extract_lon_lat_alt(w)[0], extract_lon_lat_alt(w)[1]) for w in current_geo)
+    ref_lon = 0.0
+    ref_lat = 0.0
+    if geo_mode:
+        ref_lon, ref_lat = _route_ref_origin(current_geo, zones_geo)
+        current = [_geo_to_local_point(w, ref_lon=ref_lon, ref_lat=ref_lat) for w in current_geo]
+        zones = [_geo_to_local_zone(z, ref_lon=ref_lon, ref_lat=ref_lat) for z in zones_geo]
+    else:
+        current = [dict(w) for w in current_geo]
+        zones = [dict(z) for z in zones_geo]
     source_route_id = str(route_id or sim.get("route_id", "route-1"))
     if len(current) < 2:
         return {
@@ -985,8 +1090,7 @@ def uav_replan_route_via_utm_nfz(
             "error": "route_requires_at_least_two_waypoints",
         }
     prefs = _parse_replan_preferences(user_request, optimization_profile=optimization_profile)
-    nfz_before = UTM_SERVICE.check_no_fly_zones(current)
-    zones = list(UTM_SERVICE.no_fly_zones)
+    nfz_before = UTM_SERVICE.check_no_fly_zones(current_geo if geo_mode else current)
     updated: list[dict[str, Any]] = []
     changes: list[dict[str, Any]] = []
     preserved_action_conflicts: list[dict[str, Any]] = []
@@ -1022,7 +1126,7 @@ def uav_replan_route_via_utm_nfz(
                 )
                 changes.append({"index": idx, "zone_id": zone.get("zone_id"), "from": prev, "to": dict(next_wp), "kind": "waypoint_replace"})
         # keep within simulated bounds for sector-A3 if requested
-        if airspace_segment == "sector-A3":
+        if airspace_segment == "sector-A3" and not geo_mode:
             next_wp["x"] = min(400.0, max(0.0, next_wp["x"]))
             next_wp["y"] = min(300.0, max(0.0, next_wp["y"]))
             next_wp["z"] = min(120.0, max(0.0, next_wp["z"]))
@@ -1098,8 +1202,54 @@ def uav_replan_route_via_utm_nfz(
     remaining_segment_conflicts = _segment_conflict_details_with_policy(updated, zones, prefs)
 
     replanned_route_id = f"{_normalize_route_id_base(source_route_id)}{route_id_suffix}"
-    SIM.plan_route(uav_id=uav_id, route_id=replanned_route_id, waypoints=updated)
-    nfz_after = UTM_SERVICE.check_no_fly_zones(updated)
+    updated_output = (
+        [_local_to_geo_point(w, ref_lon=ref_lon, ref_lat=ref_lat) for w in updated]
+        if geo_mode
+        else [point_with_aliases(w) for w in updated]
+    )
+    result_changes = _convert_nested_local_points_to_geo(changes, ref_lon=ref_lon, ref_lat=ref_lat) if geo_mode else changes
+    result_preserved_action_conflicts = (
+        _convert_nested_local_points_to_geo(preserved_action_conflicts, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else preserved_action_conflicts
+    )
+    result_replaced_original_waypoints = (
+        _convert_nested_local_points_to_geo(replaced_original_waypoints, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else replaced_original_waypoints
+    )
+    result_segment_insertions = (
+        _convert_nested_local_points_to_geo(segment_insertions, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else segment_insertions
+    )
+    result_pre_final_segment_conflicts = (
+        _convert_nested_local_points_to_geo(pre_final_segment_conflicts, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else pre_final_segment_conflicts
+    )
+    result_remaining_segment_conflicts = (
+        _convert_nested_local_points_to_geo(remaining_segment_conflicts, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else remaining_segment_conflicts
+    )
+    result_waypoint_deletions = (
+        _convert_nested_local_points_to_geo(los_prune_deletions + deletions + compressed_deletions + inserted_trim_deletions, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else (los_prune_deletions + deletions + compressed_deletions + inserted_trim_deletions)
+    )
+    result_los_prune_deletions = (
+        _convert_nested_local_points_to_geo(los_prune_deletions, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else los_prune_deletions
+    )
+    result_inserted_trim_deletions = (
+        _convert_nested_local_points_to_geo(inserted_trim_deletions, ref_lon=ref_lon, ref_lat=ref_lat)
+        if geo_mode
+        else inserted_trim_deletions
+    )
+    SIM.plan_route(uav_id=uav_id, route_id=replanned_route_id, waypoints=updated_output)
+    nfz_after = UTM_SERVICE.check_no_fly_zones(updated_output)
     return {
         "status": "success",
         "agent": "uav",
@@ -1110,26 +1260,26 @@ def uav_replan_route_via_utm_nfz(
             "route_id": replanned_route_id,
             "user_request": user_request,
             "replan_preferences": prefs,
-            "changes": changes,
-            "preserved_action_conflicts": preserved_action_conflicts,
-            "replaced_original_waypoints": replaced_original_waypoints,
-            "segment_insertions": segment_insertions,
+            "coordinate_mode": "geo_local_meter_projection" if geo_mode else "legacy_xy_meter",
+            "changes": result_changes,
+            "preserved_action_conflicts": result_preserved_action_conflicts,
+            "replaced_original_waypoints": result_replaced_original_waypoints,
+            "segment_insertions": result_segment_insertions,
             "segment_conflicts_checked": max(0, len(updated) - 1),
-            "segment_conflicts_before_final_fix": pre_final_segment_conflicts,
-            "segment_conflicts_after_replan": remaining_segment_conflicts,
-            "final_segment_clearance_ok": len(remaining_segment_conflicts) == 0,
+            "segment_conflicts_before_final_fix": result_pre_final_segment_conflicts,
+            "segment_conflicts_after_replan": result_remaining_segment_conflicts,
+            "final_segment_clearance_ok": len(result_remaining_segment_conflicts) == 0,
             "nfz_conflict_mode": str(prefs.get("nfz_conflict_mode", "xyz_cylinder")),
             "allow_overflight": bool(prefs.get("allow_overflight", False)),
             "overflight_clearance_m": float(prefs.get("overflight_clearance_m", 0.0)),
             "vertical_cost_weight": float(prefs.get("vertical_cost_weight", 1.5)),
-            "waypoint_deletions": los_prune_deletions + deletions + compressed_deletions + inserted_trim_deletions,
-            "los_prune_deletions": los_prune_deletions,
+            "waypoint_deletions": result_waypoint_deletions,
+            "los_prune_deletions": result_los_prune_deletions,
             "los_prune_passes": los_prune_passes,
-            "inserted_trim_deletions": inserted_trim_deletions,
+            "inserted_trim_deletions": result_inserted_trim_deletions,
             "inserted_trim_passes": inserted_trim_passes,
             "nfz_before": nfz_before,
             "nfz_after": nfz_after,
             "uav": SIM.status(uav_id),
         },
     }
-

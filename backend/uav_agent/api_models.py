@@ -4,26 +4,66 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from .simulator import DEFAULT_ROUTE
+from .simulator import DEFAULT_ROUTE, OTANIEMI_CENTER_LAT, OTANIEMI_CENTER_LON
 
 
 class WaypointModel(BaseModel):
-    x: float
-    y: float
-    z: float
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    lon: Optional[float] = None
+    lat: Optional[float] = None
+    altM: Optional[float] = None
     action: Optional[str] = None
     wp_origin: Optional[str] = Field(default=None, alias="_wp_origin")
     wp_source: Optional[str] = Field(default=None, alias="_wp_source")
     mapped_from_original_index: Optional[int] = Field(default=None, alias="_mapped_from_original_index")
     mapped_from_wp_source: Optional[str] = Field(default=None, alias="_mapped_from_wp_source")
 
+    @model_validator(mode="after")
+    def _normalize_geo(self) -> "WaypointModel":
+        lon = self.lon if self.lon is not None else self.x
+        lat = self.lat if self.lat is not None else self.y
+        alt_m = self.altM if self.altM is not None else self.z
+        if lon is None or lat is None:
+            raise ValueError("waypoint requires lon/lat (or x/y compatibility fields)")
+        if alt_m is None:
+            alt_m = 0.0
+        self.lon = float(lon)
+        self.lat = float(lat)
+        self.altM = float(alt_m)
+        self.x = float(self.lon)
+        self.y = float(self.lat)
+        self.z = float(self.altM)
+        return self
+
 
 class PositionModel(BaseModel):
-    x: float
-    y: float
-    z: float
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    lon: Optional[float] = None
+    lat: Optional[float] = None
+    altM: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _normalize_geo(self) -> "PositionModel":
+        lon = self.lon if self.lon is not None else self.x
+        lat = self.lat if self.lat is not None else self.y
+        alt_m = self.altM if self.altM is not None else self.z
+        if lon is None or lat is None:
+            raise ValueError("position requires lon/lat (or x/y compatibility fields)")
+        if alt_m is None:
+            alt_m = 0.0
+        self.lon = float(lon)
+        self.lat = float(lat)
+        self.altM = float(alt_m)
+        self.x = float(self.lon)
+        self.y = float(self.lat)
+        self.z = float(self.altM)
+        return self
 
 
 def _dump_waypoint_payload_model(w: WaypointModel) -> Dict[str, Any]:
@@ -41,9 +81,25 @@ class FleetCreateUavPayload(BaseModel):
     uav_id: Optional[str] = None
     user_id: Optional[str] = None
     operator_license_id: Optional[str] = None
-    x: float = 0.0
-    y: float = 0.0
-    z: float = 0.0
+    x: Optional[float] = None
+    y: Optional[float] = None
+    z: Optional[float] = None
+    lon: Optional[float] = None
+    lat: Optional[float] = None
+    altM: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _normalize_geo(self) -> "FleetCreateUavPayload":
+        lon = self.lon if self.lon is not None else self.x
+        lat = self.lat if self.lat is not None else self.y
+        alt_m = self.altM if self.altM is not None else self.z
+        self.lon = float(lon if lon is not None else OTANIEMI_CENTER_LON)
+        self.lat = float(lat if lat is not None else OTANIEMI_CENTER_LAT)
+        self.altM = float(alt_m if alt_m is not None else 40.0)
+        self.x = float(self.lon)
+        self.y = float(self.lat)
+        self.z = float(self.altM)
+        return self
 
 
 class UavDemoSeedPayload(BaseModel):
@@ -207,12 +263,28 @@ class LicensePayload(BaseModel):
 
 class NoFlyZonePayload(BaseModel):
     zone_id: Optional[str] = None
-    cx: float
-    cy: float
+    cx: Optional[float] = None
+    cy: Optional[float] = None
+    lon: Optional[float] = None
+    lat: Optional[float] = None
+    shape: str = "circle"
     radius_m: float = 30.0
     z_min: float = 0.0
     z_max: float = 120.0
     reason: str = "operator_defined"
+
+    @model_validator(mode="after")
+    def _normalize_geo(self) -> "NoFlyZonePayload":
+        lon = self.lon if self.lon is not None else self.cx
+        lat = self.lat if self.lat is not None else self.cy
+        if lon is None or lat is None:
+            raise ValueError("no-fly-zone requires lon/lat (or cx/cy compatibility fields)")
+        self.lon = float(lon)
+        self.lat = float(lat)
+        self.cx = float(self.lon)
+        self.cy = float(self.lat)
+        self.shape = "circle" if str(self.shape or "circle").strip().lower() == "circle" else "box"
+        return self
 
 
 class CorridorPayload(BaseModel):

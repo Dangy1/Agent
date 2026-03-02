@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import FastAPI, HTTPException, Response
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, Field
 except Exception as e:  # pragma: no cover
@@ -230,6 +230,15 @@ def get_mission_protocol_trace(mission_id: str, limit: int = 200, include_replay
     except KeyError:
         raise HTTPException(status_code=404, detail=f"mission not found: {mission_id}") from None
     return {"status": "success", "result": {"mission_id": mission_id, "protocol_trace": trace}}
+
+
+@app.get("/api/mission/{mission_id}/protocol-trace/mermaid")
+def get_mission_protocol_trace_mermaid(mission_id: str, limit: int = 200, include_replayed: bool = True) -> Response:
+    try:
+        mermaid = MISSION_RUNTIME.get_protocol_trace_mermaid(mission_id, limit=limit, include_replayed=include_replayed)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"mission not found: {mission_id}") from None
+    return Response(content=mermaid, media_type="text/plain; charset=utf-8")
 
 
 @app.get("/api/mission")

@@ -91,6 +91,71 @@ class MissionSupervisorProtocolTraceTests(unittest.TestCase):
         self.assertEqual(out[0]["command_id"], "cmd-3")
         self.assertEqual(out[1]["command_id"], "cmd-4")
 
+    def test_protocol_trace_mermaid_contains_message_flow(self) -> None:
+        svc = self._service()
+        mission_id = f"mission-{uuid4().hex[:8]}"
+        key = svc._state_key(mission_id)  # type: ignore[attr-defined]
+        svc.db.set_state(
+            key,
+            {
+                "mission_id": mission_id,
+                "graph_state": {
+                    "command_bus_log": [
+                        {
+                            "command_id": "cmd-1",
+                            "correlation_id": "task-1",
+                            "mission_id": mission_id,
+                            "step_id": "s1",
+                            "domain": "network",
+                            "op": "health",
+                            "status": "success",
+                            "responded_at": "2026-03-01T00:00:00Z",
+                            "replayed": False,
+                            "protocol_trace": {
+                                "a2a": {
+                                    "params": {
+                                        "message": {
+                                            "metadata": {
+                                                "sender": "mission_supervisor",
+                                                "receiver": "network",
+                                            }
+                                        }
+                                    }
+                                },
+                                "mcp": {"tool": "mcp_health"},
+                            },
+                        },
+                        {
+                            "command_id": "cmd-2",
+                            "correlation_id": "task-1",
+                            "mission_id": mission_id,
+                            "step_id": "s2",
+                            "domain": "network",
+                            "op": "health",
+                            "status": "success",
+                            "responded_at": "2026-03-01T00:00:01Z",
+                            "replayed": True,
+                            "protocol_trace": {
+                                "a2a": {"sender": "mission_supervisor", "receiver": "network"},
+                                "mcp": {"tool": "mcp_health"},
+                            },
+                        },
+                    ]
+                },
+            },
+        )
+
+        mermaid = svc.get_protocol_trace_mermaid(mission_id, include_replayed=True)
+        self.assertIn("sequenceDiagram", mermaid)
+        self.assertIn("mission_supervisor", mermaid)
+        self.assertIn("network", mermaid)
+        self.assertIn("network.health [success, live]", mermaid)
+        self.assertIn("network.health [success, replayed]", mermaid)
+
+        filtered = svc.get_protocol_trace_mermaid(mission_id, include_replayed=False)
+        self.assertIn("network.health [success, live]", filtered)
+        self.assertNotIn("network.health [success, replayed]", filtered)
+
 
 if __name__ == "__main__":
     unittest.main()

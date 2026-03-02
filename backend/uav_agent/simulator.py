@@ -2,25 +2,40 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import os
 from typing import Any, Dict, List
 
+from geo_utils import (
+    distance_3d_m,
+    extract_lon_lat_alt,
+    haversine_m,
+    is_valid_lon_lat,
+    lon_lat_from_local_xy_m,
+    normalize_waypoints,
+    point_with_aliases,
+)
 
 DEFAULT_ROUTE = [
-    {"x": 0.0, "y": 0.0, "z": 0.0},
-    {"x": 100.0, "y": 50.0, "z": 40.0},
-    {"x": 200.0, "y": 120.0, "z": 55.0},
-    {"x": 260.0, "y": 180.0, "z": 45.0},
+    {"lon": 24.8164, "lat": 60.1808, "altM": 40.0},
+    {"lon": 24.8268, "lat": 60.1860, "altM": 70.0},
+    {"lon": 24.8385, "lat": 60.1915, "altM": 65.0},
+    {"lon": 24.8502, "lat": 60.1968, "altM": 55.0},
 ]
+OTANIEMI_CENTER_LON = float(os.getenv("UAV_OTANIEMI_CENTER_LON", "24.8286") or 24.8286)
+OTANIEMI_CENTER_LAT = float(os.getenv("UAV_OTANIEMI_CENTER_LAT", "60.1866") or 60.1866)
+LEGACY_LOCAL_MAX_X_M = float(os.getenv("UAV_LEGACY_LOCAL_MAX_X_M", "2000") or 2000)
+LEGACY_LOCAL_MAX_Y_M = float(os.getenv("UAV_LEGACY_LOCAL_MAX_Y_M", "2000") or 2000)
+MAP_RELEVANCE_RADIUS_M = float(os.getenv("UAV_MAP_RELEVANCE_RADIUS_M", "20000") or 20000)
 
 
 @dataclass
 class SimUAV:
     uav_id: str
     route_id: str = "route-1"
-    waypoints: List[dict] = field(default_factory=lambda: [dict(w) for w in DEFAULT_ROUTE])
+    waypoints: List[dict] = field(default_factory=lambda: normalize_waypoints(DEFAULT_ROUTE))
     waypoint_index: int = 0
     segment_progress: float = 0.0
-    position: Dict[str, float] = field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    position: Dict[str, float] = field(default_factory=lambda: point_with_aliases(DEFAULT_ROUTE[0]))
     velocity_mps: float = 12.0
     battery_pct: float = 100.0
     distance_travelled_m: float = 0.0
@@ -41,8 +56,8 @@ class SimUAV:
             "waypoint_index": self.waypoint_index,
             "segment_progress": round(max(0.0, min(1.0, float(self.segment_progress))), 4),
             "waypoints_total": len(self.waypoints),
-            "waypoints": [dict(w) for w in self.waypoints],
-            "position": dict(self.position),
+            "waypoints": [point_with_aliases(w) for w in self.waypoints],
+            "position": point_with_aliases(self.position),
             "velocity_mps": self.velocity_mps,
             "battery_pct": round(self.battery_pct, 2),
             "distance_travelled_m": round(self.distance_travelled_m, 3),
@@ -63,11 +78,64 @@ class UAVSimulator:
         self._fleet: Dict[str, SimUAV] = {}
 
     @staticmethod
+    def _prefer_otaniemi_bounds(source: str) -> bool:
+        mode = str(source or "").strip().lower()
+        return mode in {"", "sim", "simulated", "demo", "synthetic", "test"}
+
+    def _coerce_lon_lat(
+        self,
+        lon: float,
+        lat: float,
+        *,
+        ref_lon: float | None = None,
+        ref_lat: float | None = None,
+        force_within_map: bool = False,
+    ) -> tuple[float, float]:
+        x = float(lon)
+        y = float(lat)
+        anchor_lon = float(ref_lon if ref_lon is not None else OTANIEMI_CENTER_LON)
+        anchor_lat = float(ref_lat if ref_lat is not None else OTANIEMI_CENTER_LAT)
+        looks_local_xy = 0.0 <= x <= LEGACY_LOCAL_MAX_X_M and 0.0 <= y <= LEGACY_LOCAL_MAX_Y_M
+        if is_valid_lon_lat(x, y):
+            if haversine_m(x, y, anchor_lon, anchor_lat) <= MAP_RELEVANCE_RADIUS_M:
+                return x, y
+            if looks_local_xy:
+                return lon_lat_from_local_xy_m(x, y, ref_lon=anchor_lon, ref_lat=anchor_lat)
+            if force_within_map:
+                return anchor_lon, anchor_lat
+            return x, y
+        if looks_local_xy:
+            return lon_lat_from_local_xy_m(x, y, ref_lon=anchor_lon, ref_lat=anchor_lat)
+        return anchor_lon, anchor_lat
+
+    def _sanitize_waypoints(self, waypoints: List[dict], *, force_within_map: bool) -> List[dict]:
+        normalized = normalize_waypoints(waypoints)
+        if not normalized:
+            return normalize_waypoints(DEFAULT_ROUTE)
+        ref_lon = OTANIEMI_CENTER_LON
+        ref_lat = OTANIEMI_CENTER_LAT
+        out: List[dict] = []
+        for row in normalized:
+            lon, lat, alt_m = extract_lon_lat_alt(row)
+            lon, lat = self._coerce_lon_lat(
+                lon,
+                lat,
+                ref_lon=ref_lon,
+                ref_lat=ref_lat,
+                force_within_map=force_within_map,
+            )
+            clean = dict(row)
+            clean["lon"] = float(lon)
+            clean["lat"] = float(lat)
+            clean["altM"] = max(0.0, float(alt_m))
+            out.append(point_with_aliases(clean))
+            ref_lon = float(lon)
+            ref_lat = float(lat)
+        return out or normalize_waypoints(DEFAULT_ROUTE)
+
+    @staticmethod
     def _dist(a: Dict[str, Any], b: Dict[str, Any]) -> float:
-        dx = float(b.get("x", 0.0)) - float(a.get("x", 0.0))
-        dy = float(b.get("y", 0.0)) - float(a.get("y", 0.0))
-        dz = float(b.get("z", 0.0)) - float(a.get("z", 0.0))
-        return (dx * dx + dy * dy + dz * dz) ** 0.5
+        return distance_3d_m(a, b)
 
     def _route_total_length(self, u: SimUAV) -> float:
         if len(u.waypoints) < 2:
@@ -132,11 +200,7 @@ class UAVSimulator:
         first = u.waypoints[0]
         u.waypoint_index = 0
         u.segment_progress = 0.0
-        u.position = {
-            "x": float(first.get("x", 0.0)),
-            "y": float(first.get("y", 0.0)),
-            "z": float(first.get("z", 0.0)),
-        }
+        u.position = point_with_aliases(first)
         u.distance_travelled_m = 0.0
         self._refresh_route_progress(u)
 
@@ -148,10 +212,10 @@ class UAVSimulator:
     def plan_route(self, uav_id: str, route_id: str, waypoints: List[dict] | None = None) -> Dict[str, Any]:
         u = self.get_or_create(uav_id)
         u.route_id = route_id
-        u.waypoints = [dict(w) for w in (DEFAULT_ROUTE if waypoints is None else waypoints)]
+        u.waypoints = normalize_waypoints(DEFAULT_ROUTE if waypoints is None else waypoints)
         u.waypoint_index = 0
-        first = u.waypoints[0] if u.waypoints else {"x": 0.0, "y": 0.0, "z": 0.0}
-        u.position = {"x": float(first.get("x", 0.0)), "y": float(first.get("y", 0.0)), "z": float(first.get("z", 0.0))}
+        first = u.waypoints[0] if u.waypoints else point_with_aliases({})
+        u.position = point_with_aliases(first)
         u.segment_progress = 0.0
         u.distance_travelled_m = 0.0
         u.flight_phase = "PLANNED"
@@ -213,11 +277,7 @@ class UAVSimulator:
                 if seg_len <= 1e-9:
                     u.waypoint_index += 1
                     u.segment_progress = 0.0
-                    u.position = {
-                        "x": float(end_wp.get("x", 0.0)),
-                        "y": float(end_wp.get("y", 0.0)),
-                        "z": float(end_wp.get("z", 0.0)),
-                    }
+                    u.position = point_with_aliases(end_wp)
                     continue
                 dist_on_seg = max(0.0, min(1.0, float(u.segment_progress))) * seg_len
                 remaining_seg = max(0.0, seg_len - dist_on_seg)
@@ -228,11 +288,7 @@ class UAVSimulator:
                 if dist_on_seg >= seg_len - 1e-9:
                     u.waypoint_index += 1
                     u.segment_progress = 0.0
-                    u.position = {
-                        "x": float(end_wp.get("x", 0.0)),
-                        "y": float(end_wp.get("y", 0.0)),
-                        "z": float(end_wp.get("z", 0.0)),
-                    }
+                    u.position = point_with_aliases(end_wp)
                     if u.waypoint_index >= len(u.waypoints) - 1:
                         u.flight_phase = "ARRIVAL"
                         u.active = False
@@ -243,7 +299,13 @@ class UAVSimulator:
                     sx, sy, sz = float(start_wp.get("x", 0.0)), float(start_wp.get("y", 0.0)), float(start_wp.get("z", 0.0))
                     ex, ey, ez = float(end_wp.get("x", 0.0)), float(end_wp.get("y", 0.0)), float(end_wp.get("z", 0.0))
                     t = u.segment_progress
-                    u.position = {"x": sx + (ex - sx) * t, "y": sy + (ey - sy) * t, "z": sz + (ez - sz) * t}
+                    u.position = point_with_aliases(
+                        {
+                            "x": sx + (ex - sx) * t,
+                            "y": sy + (ey - sy) * t,
+                            "z": sz + (ez - sz) * t,
+                        }
+                    )
                     u.flight_phase = "MISSION" if u.waypoint_index > 0 else "TAKEOFF"
             u.distance_travelled_m += moved_this_tick
             u.battery_pct = max(0.0, u.battery_pct - 0.8)
@@ -285,7 +347,7 @@ class UAVSimulator:
         u.flight_phase = "RTH"
         if u.waypoints:
             home = u.waypoints[0]
-            u.position = {"x": float(home.get("x", 0.0)), "y": float(home.get("y", 0.0)), "z": float(home.get("z", 0.0))}
+            u.position = point_with_aliases(home)
             u.waypoint_index = 0
             u.segment_progress = 0.0
         self._refresh_route_progress(u)
@@ -298,6 +360,7 @@ class UAVSimulator:
         u.armed = False
         u.flight_phase = "LAND"
         u.position["z"] = 0.0
+        u.position["altM"] = 0.0
         self._refresh_route_progress(u)
         self._mark_update(u)
         return u.snapshot()
@@ -329,14 +392,18 @@ class UAVSimulator:
         if route_id is not None:
             u.route_id = str(route_id)
         if isinstance(waypoints, list) and waypoints:
-            parsed = [dict(w) for w in waypoints if isinstance(w, dict)]
+            parsed = normalize_waypoints(waypoints)
             if parsed:
                 u.waypoints = parsed
         if isinstance(position, dict):
+            pos = point_with_aliases(position)
             u.position = {
-                "x": float(position.get("x", u.position.get("x", 0.0))),
-                "y": float(position.get("y", u.position.get("y", 0.0))),
-                "z": float(position.get("z", u.position.get("z", 0.0))),
+                "x": float(pos.get("x", u.position.get("x", 0.0))),
+                "y": float(pos.get("y", u.position.get("y", 0.0))),
+                "z": float(pos.get("z", u.position.get("z", 0.0))),
+                "lon": float(pos.get("lon", u.position.get("lon", 0.0))),
+                "lat": float(pos.get("lat", u.position.get("lat", 0.0))),
+                "altM": float(pos.get("altM", u.position.get("altM", 0.0))),
             }
             # For remote/live UAV feeds, derive route progress from reported position
             # when explicit waypoint_index is not supplied.
@@ -347,7 +414,7 @@ class UAVSimulator:
         elif u.waypoints:
             idx = max(0, min(int(waypoint_index or u.waypoint_index), len(u.waypoints) - 1))
             wp = u.waypoints[idx]
-            u.position = {"x": float(wp.get("x", 0.0)), "y": float(wp.get("y", 0.0)), "z": float(wp.get("z", 0.0))}
+            u.position = point_with_aliases(wp)
         if waypoint_index is not None and u.waypoints:
             u.waypoint_index = max(0, min(int(waypoint_index), len(u.waypoints) - 1))
             u.segment_progress = 0.0
@@ -385,18 +452,38 @@ class UAVSimulator:
                 continue
             u = SimUAV(uav_id=str(snap.get("uav_id", uav_id)))
             u.route_id = str(snap.get("route_id", "route-1"))
+            u.data_source = str(snap.get("data_source", "simulated") or "simulated")
+            force_within_map = self._prefer_otaniemi_bounds(u.data_source)
             waypoints = snap.get("waypoints")
             if isinstance(waypoints, list) and waypoints:
-                u.waypoints = [dict(w) for w in waypoints if isinstance(w, dict)]
+                u.waypoints = self._sanitize_waypoints(waypoints, force_within_map=force_within_map)
+            elif force_within_map:
+                u.waypoints = normalize_waypoints(DEFAULT_ROUTE)
             u.waypoint_index = int(snap.get("waypoint_index", 0) or 0)
-            u.segment_progress = float(snap.get("segment_progress", 0.0) or 0.0)
+            if u.waypoints:
+                u.waypoint_index = max(0, min(u.waypoint_index, len(u.waypoints) - 1))
+            else:
+                u.waypoint_index = 0
+            u.segment_progress = max(0.0, min(1.0, float(snap.get("segment_progress", 0.0) or 0.0)))
             pos = snap.get("position")
             if isinstance(pos, dict):
-                u.position = {
-                    "x": float(pos.get("x", 0.0)),
-                    "y": float(pos.get("y", 0.0)),
-                    "z": float(pos.get("z", 0.0)),
-                }
+                ref = u.waypoints[u.waypoint_index] if u.waypoints else point_with_aliases(DEFAULT_ROUTE[0])
+                ref_lon, ref_lat, _ = extract_lon_lat_alt(ref)
+                lon, lat, alt_m = extract_lon_lat_alt(pos)
+                lon, lat = self._coerce_lon_lat(
+                    lon,
+                    lat,
+                    ref_lon=ref_lon,
+                    ref_lat=ref_lat,
+                    force_within_map=force_within_map,
+                )
+                clean_pos = dict(pos)
+                clean_pos["lon"] = float(lon)
+                clean_pos["lat"] = float(lat)
+                clean_pos["altM"] = max(0.0, float(alt_m))
+                u.position = point_with_aliases(clean_pos)
+            elif u.waypoints:
+                u.position = point_with_aliases(u.waypoints[u.waypoint_index])
             u.velocity_mps = float(snap.get("velocity_mps", u.velocity_mps) or u.velocity_mps)
             u.battery_pct = float(snap.get("battery_pct", u.battery_pct) or u.battery_pct)
             u.distance_travelled_m = float(snap.get("distance_travelled_m", u.distance_travelled_m) or u.distance_travelled_m)
@@ -409,9 +496,9 @@ class UAVSimulator:
                 u.utm_approval = dict(snap["utm_approval"])  # type: ignore[index]
             if isinstance(snap.get("utm_geofence_result"), dict):
                 u.utm_geofence_result = dict(snap["utm_geofence_result"])  # type: ignore[index]
-            u.data_source = str(snap.get("data_source", "simulated") or "simulated")
             if isinstance(snap.get("data_source_meta"), dict):
                 u.data_source_meta = dict(snap["data_source_meta"])  # type: ignore[index]
+            self._refresh_route_progress(u)
             restored[u.uav_id] = u
         if restored:
             self._fleet = restored

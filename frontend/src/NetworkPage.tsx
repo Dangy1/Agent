@@ -111,22 +111,59 @@ const fieldStyle: React.CSSProperties = {
 };
 
 const INITIAL_BS: BaseStation[] = [
-  { id: "BS-A", x: 60, y: 55, band: "n78", freqMHz: 3500, bandwidthMHz: 100, txPowerDbm: 39, heightM: 32, tiltDeg: 6, loadPct: 62, status: "online" },
-  { id: "BS-B", x: 205, y: 48, band: "n78", freqMHz: 3500, bandwidthMHz: 80, txPowerDbm: 37, heightM: 28, tiltDeg: 5, loadPct: 74, status: "degraded" },
-  { id: "BS-C", x: 330, y: 95, band: "n41", freqMHz: 2600, bandwidthMHz: 60, txPowerDbm: 36, heightM: 24, tiltDeg: 4, loadPct: 48, status: "online" },
-  { id: "BS-D", x: 110, y: 210, band: "n28", freqMHz: 700, bandwidthMHz: 20, txPowerDbm: 43, heightM: 36, tiltDeg: 7, loadPct: 41, status: "online" },
-  { id: "BS-E", x: 290, y: 225, band: "n78", freqMHz: 3500, bandwidthMHz: 100, txPowerDbm: 40, heightM: 34, tiltDeg: 6, loadPct: 69, status: "online" },
+  { id: "BS-A", x: 24.82595, y: 60.18490, band: "n78", freqMHz: 3500, bandwidthMHz: 100, txPowerDbm: 39, heightM: 30, tiltDeg: 6, loadPct: 58, status: "online" },
+  { id: "BS-B", x: 24.83065, y: 60.18595, band: "n78", freqMHz: 3500, bandwidthMHz: 80, txPowerDbm: 37, heightM: 27, tiltDeg: 5, loadPct: 66, status: "degraded" },
+  { id: "BS-C", x: 24.83540, y: 60.18780, band: "n41", freqMHz: 2600, bandwidthMHz: 60, txPowerDbm: 36, heightM: 24, tiltDeg: 4, loadPct: 52, status: "online" },
+  { id: "BS-D", x: 24.83890, y: 60.18385, band: "n28", freqMHz: 700, bandwidthMHz: 20, txPowerDbm: 43, heightM: 35, tiltDeg: 7, loadPct: 39, status: "online" },
+  { id: "BS-E", x: 24.82360, y: 60.18870, band: "n78", freqMHz: 3500, bandwidthMHz: 100, txPowerDbm: 40, heightM: 33, tiltDeg: 6, loadPct: 63, status: "online" },
 ];
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
+function trackingQualityScore(snapshot: TrackingSnapshot): number {
+  const sinrScore = clamp(((snapshot.sinrDb + 8) / 43) * 100, 0, 100);
+  const latencyScore = clamp(100 - (snapshot.latencyMs - 10) * 2.1, 0, 100);
+  const lossScore = clamp(100 - snapshot.packetLossPct * 18, 0, 100);
+  const confidenceScore = clamp(snapshot.trackingConfidencePct, 0, 100);
+  return Number((sinrScore * 0.32 + latencyScore * 0.24 + lossScore * 0.2 + confidenceScore * 0.24).toFixed(1));
+}
+
+function scoreTone(score: number): string {
+  if (score >= 82) return "#027a48";
+  if (score >= 65) return "#b54708";
+  return "#b42318";
+}
+
+function qosTone(qos: UavTrack["qosClass"]): string {
+  if (qos === "control") return "#155eef";
+  if (qos === "video") return "#b54708";
+  return "#0f766e";
+}
+
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+function looksGeoPoint(p: Point): boolean {
+  return Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= -180 && p.x <= 180 && p.y >= -90 && p.y <= 90;
+}
+
+function haversineMeters(a: Point, b: Point): number {
+  const r = 6_371_008.8;
+  const lon1 = (a.x * Math.PI) / 180;
+  const lat1 = (a.y * Math.PI) / 180;
+  const lon2 = (b.x * Math.PI) / 180;
+  const lat2 = (b.y * Math.PI) / 180;
+  const dLon = lon2 - lon1;
+  const dLat = lat2 - lat1;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return r * 2 * Math.atan2(Math.sqrt(Math.max(0, h)), Math.sqrt(Math.max(0, 1 - h)));
+}
+
 function distance(a: Point, b: Point): number {
+  if (looksGeoPoint(a) && looksGeoPoint(b)) return haversineMeters(a, b);
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
@@ -143,8 +180,8 @@ function currentUavPosition(u: UavTrack): RoutePoint {
 }
 
 function coverageRadius(bs: BaseStation): number {
-  const lowBandBoost = bs.freqMHz < 1000 ? 55 : bs.freqMHz < 3000 ? 35 : 18;
-  return clamp(45 + (bs.txPowerDbm - 34) * 5 + bs.bandwidthMHz * 0.18 + lowBandBoost - bs.loadPct * 0.12, 36, 160);
+  const lowBandBoost = bs.freqMHz < 1000 ? 260 : bs.freqMHz < 3000 ? 130 : 70;
+  return clamp(140 + (bs.txPowerDbm - 34) * 16 + bs.bandwidthMHz * 0.45 + lowBandBoost - bs.loadPct * 0.9, 120, 650);
 }
 
 function signalAtPoint(bs: BaseStation, p: RoutePoint): number {
@@ -207,6 +244,22 @@ function Metric({ label, value, tone = "#101828" }: { label: string; value: Reac
   );
 }
 
+function SignalMeter({ label, value, tone, hint }: { label: string; value: number; tone: string; hint: string }) {
+  const safeValue = clamp(value, 0, 100);
+  return (
+    <div style={{ display: "grid", gap: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#475467" }}>
+        <span>{label}</span>
+        <span style={{ fontWeight: 700, color: tone }}>{safeValue.toFixed(1)}%</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 999, background: "#e4e7ec", overflow: "hidden" }}>
+        <div style={{ width: `${safeValue}%`, height: "100%", borderRadius: 999, background: `linear-gradient(90deg, ${tone} 0%, ${tone}cc 100%)` }} />
+      </div>
+      <div style={{ fontSize: 10, color: "#667085" }}>{hint}</div>
+    </div>
+  );
+}
+
 export function NetworkPage() {
   const sharedInit = getSharedPageState();
   const [networkApiBase, setNetworkApiBase] = useState(sharedInit.networkApiBase || "http://127.0.0.1:8022");
@@ -242,8 +295,11 @@ export function NetworkPage() {
           trackingSnapshots: [
             {
               id: "uav-1",
-              x: 120,
-              y: 90,
+              lon: 24.8288,
+              lat: 60.1856,
+              altM: 60,
+              x: 24.8288,
+              y: 60.1856,
               z: 60,
               headingDeg: 45,
               speedMps: 12,
@@ -286,8 +342,8 @@ export function NetworkPage() {
       setBaseStations(
         bsList.map((b) => ({
           id: String(b.id ?? "BS"),
-          x: Number(b.x ?? 0),
-          y: Number(b.y ?? 0),
+          x: Number(b.lon ?? b.x ?? 0),
+          y: Number(b.lat ?? b.y ?? 0),
           band: String(b.band ?? "n78"),
           freqMHz: Number(b.freqMHz ?? 3500),
           bandwidthMHz: Number(b.bandwidthMHz ?? 100),
@@ -303,17 +359,17 @@ export function NetworkPage() {
       setUavs(
         uavList.map((u) => {
           const route = Array.isArray(u.route)
-            ? u.route.filter(isObject).map((p) => ({ x: Number(p.x ?? 0), y: Number(p.y ?? 0), z: Number(p.z ?? 0) }))
+            ? u.route.filter(isObject).map((p) => ({ x: Number(p.lon ?? p.x ?? 0), y: Number(p.lat ?? p.y ?? 0), z: Number(p.altM ?? p.z ?? 0) }))
             : [];
           const pos = asRecord(u.position);
           return {
             id: String(u.id ?? "uav"),
             mission: String(u.mission ?? "mission"),
-            route: route.length ? route : [{ x: 0, y: 0, z: 0 }, { x: 1, y: 1, z: 1 }],
+            route: route.length ? route : [{ x: 24.8164, y: 60.1808, z: 60 }, { x: 24.8268, y: 60.1860, z: 62 }],
             routeIndex: Number(u.routeIndex ?? 0),
             t: Number(u.t ?? 0),
             speedMps: Number(u.speedMps ?? 12),
-            altitudeM: Number(pos?.z ?? route[0]?.z ?? 0),
+            altitudeM: Number(pos?.altM ?? pos?.z ?? route[0]?.z ?? 0),
             qosClass: (String(u.qosClass ?? "telemetry") as UavTrack["qosClass"]),
           };
         }),
@@ -323,9 +379,9 @@ export function NetworkPage() {
       setRemoteSnapshots(
         snapshots.map((s) => ({
           id: String(s.id ?? "uav"),
-          x: Number(s.x ?? 0),
-          y: Number(s.y ?? 0),
-          z: Number(s.z ?? 0),
+          x: Number(s.lon ?? s.x ?? 0),
+          y: Number(s.lat ?? s.y ?? 0),
+          z: Number(s.altM ?? s.z ?? 0),
           headingDeg: Number(s.headingDeg ?? 0),
           speedMps: Number(s.speedMps ?? 0),
           attachedBsId: String(s.attachedBsId ?? "N/A"),
@@ -342,9 +398,9 @@ export function NetworkPage() {
         sel
           ? {
               id: String(sel.id ?? "uav"),
-              x: Number(sel.x ?? 0),
-              y: Number(sel.y ?? 0),
-              z: Number(sel.z ?? 0),
+              x: Number(sel.lon ?? sel.x ?? 0),
+              y: Number(sel.lat ?? sel.y ?? 0),
+              z: Number(sel.altM ?? sel.z ?? 0),
               headingDeg: Number(sel.headingDeg ?? 0),
               speedMps: Number(sel.speedMps ?? 0),
               attachedBsId: String(sel.attachedBsId ?? "N/A"),
@@ -382,8 +438,9 @@ export function NetworkPage() {
       setRemoteNfz(
         nfzRows.map((z) => ({
           zone_id: String(z.zone_id ?? "nfz"),
-          cx: Number(z.cx ?? 0),
-          cy: Number(z.cy ?? 0),
+          cx: Number(z.lon ?? z.cx ?? 0),
+          cy: Number(z.lat ?? z.cy ?? 0),
+          shape: String(z.shape ?? "circle").toLowerCase() === "box" ? "box" : "circle",
           radius_m: Number(z.radius_m ?? 0),
           z_min: Number(z.z_min ?? 0),
           z_max: Number(z.z_max ?? 120),
@@ -511,7 +568,7 @@ export function NetworkPage() {
     const avgLatency = snapshots.length ? snapshots.reduce((sum, s) => sum + s.latencyMs, 0) / snapshots.length : 0;
     const highRisk = snapshots.filter((s) => s.interferenceRisk === "high").length;
     const coverageScore = clamp(
-      93 + baseStations.filter((b) => coverageRadius(b) > 85).length * 1.1 - baseStations.filter((b) => b.status !== "online").length * 2.4 - highRisk * 1.8,
+      93 + baseStations.filter((b) => coverageRadius(b) > 220).length * 1.1 - baseStations.filter((b) => b.status !== "online").length * 2.4 - highRisk * 1.8,
       72,
       99,
     );
@@ -562,6 +619,7 @@ export function NetworkPage() {
   };
 
   const selectedUav = uavs.find((u) => u.id === selectedUavId) ?? uavs[0] ?? null;
+  const selectedLinkScore = selectedSnapshot ? trackingQualityScore(selectedSnapshot) : 0;
   const utmSizeClass = String(utmEffectiveRegs?.uav_size_class ?? "middle");
   const routeForSyncMap = selectedUav?.route ?? [];
   const plannedPosForSyncMap = routeForSyncMap.length > 0 ? routeForSyncMap[0] : null;
@@ -571,6 +629,8 @@ export function NetworkPage() {
     x: s.x,
     y: s.y,
     z: s.z,
+    headingDeg: s.headingDeg,
+    speedMps: s.speedMps,
     attachedBsId: s.attachedBsId,
     interferenceRisk: s.interferenceRisk,
   }));
@@ -603,21 +663,75 @@ export function NetworkPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(0, 1.8fr) minmax(320px, 1fr)" }}>
-        <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(0, 1.8fr) minmax(320px, 1fr)", alignItems: "start" }}>
+        <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
           <div style={cardStyle}>
             <MissionSyncMap
               title="Network Synchronized Map"
               route={routeForSyncMap}
               plannedPosition={plannedPosForSyncMap}
               trackedPositions={tracksForSyncMap}
+              mapServiceBase={networkApiBase}
               selectedUavId={selectedUavId}
               noFlyZones={remoteNfz}
               baseStations={bsForSyncMap}
               coverage={remoteCoverage}
+              coordinateMode="geo"
               showCoverage={showCoverage}
               showInterferenceHints={showInterference}
+              trackMarkerStyle="uav"
             />
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #eaecf0", display: "grid", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#101828" }}>BS Coverage & Network Parameters</div>
+                <div style={{ fontSize: 11, color: "#667085" }}>Mission-zone base stations on shared UAV overlay</div>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: "#f9fafb", color: "#475467" }}>
+                      {["BS", "Band", "Freq", "BW", "Tx Power", "Tilt", "Load", "Status"].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #eaecf0", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {baseStations.map((bs, idx) => (
+                      <tr key={bs.id}>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7", fontWeight: 700 }}>{bs.id}</td>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.band}</td>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.freqMHz} MHz</td>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.bandwidthMHz} MHz</td>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7", minWidth: 120 }}>
+                          <input
+                            type="range"
+                            min={30}
+                            max={46}
+                            step={0.5}
+                            value={bs.txPowerDbm}
+                            onChange={(e) => {
+                              const nextVal = Number(e.target.value);
+                              setBaseStations((prev) => prev.map((row, i) => (i === idx ? { ...row, txPowerDbm: nextVal } : row)));
+                              void updateBaseStationTxPower(bs.id, nextVal);
+                            }}
+                            style={{ width: "100%" }}
+                          />
+                          <div style={{ fontSize: 11, color: "#667085" }}>{bs.txPowerDbm} dBm</div>
+                        </td>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.tiltDeg}°</td>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.loadPct}%</td>
+                        <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor(bs.status), display: "inline-block" }} />
+                            <span style={{ textTransform: "capitalize" }}>{bs.status}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -690,77 +804,83 @@ export function NetworkPage() {
               </div>
             </div>
             {selectedSnapshot ? (
-              <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: "1px solid #eaecf0", background: "#fcfcfd", display: "grid", gap: 8 }}>
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: 12,
+                  border: "1px solid #d1e0ff",
+                  background: "linear-gradient(160deg, #f5f8ff 0%, #ffffff 55%, #f8fcff 100%)",
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <div
+                      style={{
+                        width: 54,
+                        height: 54,
+                        borderRadius: 14,
+                        border: "1px solid #bfd2ff",
+                        background: "#eef4ff",
+                        display: "grid",
+                        placeItems: "center",
+                        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.7)",
+                      }}
+                    >
+                      <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden>
+                        <line x1="17" y1="6" x2="17" y2="28" stroke="#1d2939" strokeWidth="1.5" />
+                        <line x1="6" y1="17" x2="28" y2="17" stroke="#1d2939" strokeWidth="1.5" />
+                        <circle cx="17" cy="17" r="4.5" fill="#f97316" stroke="#1d2939" strokeWidth="1.2" />
+                        <circle cx="17" cy="6" r="2.2" fill="#fff" stroke="#1d2939" />
+                        <circle cx="17" cy="28" r="2.2" fill="#fff" stroke="#1d2939" />
+                        <circle cx="6" cy="17" r="2.2" fill="#fff" stroke="#1d2939" />
+                        <circle cx="28" cy="17" r="2.2" fill="#fff" stroke="#1d2939" />
+                        <path d="M17 17 L27 11" stroke="#1d2939" strokeWidth="1.2" />
+                      </svg>
+                    </div>
+                    <div style={{ display: "grid", gap: 2 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#101828" }}>{selectedSnapshot.id}</div>
+                      <div style={{ fontSize: 11, color: "#475467" }}>
+                        {selectedUav?.mission ?? "mission"} • {selectedUav?.qosClass ?? "telemetry"} QoS • {selectedSnapshot.attachedBsId}
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      borderRadius: 999,
+                      border: `1px solid ${riskColor(selectedSnapshot.interferenceRisk)}66`,
+                      color: riskColor(selectedSnapshot.interferenceRisk),
+                      background: `${riskColor(selectedSnapshot.interferenceRisk)}14`,
+                      padding: "4px 10px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {selectedSnapshot.interferenceRisk} risk
+                  </div>
+                </div>
+
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
                   <Metric label="Position" value={`(${selectedSnapshot.x.toFixed(1)}, ${selectedSnapshot.y.toFixed(1)}, ${selectedSnapshot.z.toFixed(1)})`} />
                   <Metric label="Heading / Speed" value={`${selectedSnapshot.headingDeg.toFixed(0)}° / ${selectedSnapshot.speedMps} m/s`} />
-                  <Metric label="Serving BS" value={selectedSnapshot.attachedBsId} />
-                  <Metric label="Confidence" value={`${selectedSnapshot.trackingConfidencePct}%`} tone="#0f766e" />
                 </div>
-                <div style={{ fontSize: 11, color: "#344054" }}>
-                  UTM tracking interference risk:
-                  <span style={{ marginLeft: 6, color: riskColor(selectedSnapshot.interferenceRisk), fontWeight: 700, textTransform: "uppercase" }}>{selectedSnapshot.interferenceRisk}</span>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  <SignalMeter label="UAV Link Quality" value={selectedLinkScore} tone={scoreTone(selectedLinkScore)} hint={`${selectedSnapshot.sinrDb} dB SINR • ${selectedSnapshot.latencyMs} ms latency`} />
+                  <SignalMeter
+                    label="Tracking Confidence"
+                    value={selectedSnapshot.trackingConfidencePct}
+                    tone="#0f766e"
+                    hint={`${selectedSnapshot.packetLossPct}% packet loss • serving ${selectedSnapshot.attachedBsId}`}
+                  />
                 </div>
               </div>
             ) : null}
           </div>
-        </div>
-      </div>
 
-      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr)" }}>
-        <div style={cardStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#101828" }}>BS Coverage & Network Parameters</div>
-            <div style={{ fontSize: 11, color: "#667085" }}>Mission-zone base stations on shared UAV overlay</div>
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: "#f9fafb", color: "#475467" }}>
-                  {["BS", "Band", "Freq", "BW", "Tx Power", "Tilt", "Load", "Status"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: "8px 6px", borderBottom: "1px solid #eaecf0", whiteSpace: "nowrap" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {baseStations.map((bs, idx) => (
-                  <tr key={bs.id}>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7", fontWeight: 700 }}>{bs.id}</td>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.band}</td>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.freqMHz} MHz</td>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.bandwidthMHz} MHz</td>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7", minWidth: 120 }}>
-                      <input
-                        type="range"
-                        min={30}
-                        max={46}
-                        step={0.5}
-                        value={bs.txPowerDbm}
-                        onChange={(e) => {
-                          const nextVal = Number(e.target.value);
-                          setBaseStations((prev) => prev.map((row, i) => (i === idx ? { ...row, txPowerDbm: nextVal } : row)));
-                          void updateBaseStationTxPower(bs.id, nextVal);
-                        }}
-                        style={{ width: "100%" }}
-                      />
-                      <div style={{ fontSize: 11, color: "#667085" }}>{bs.txPowerDbm} dBm</div>
-                    </td>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.tiltDeg}°</td>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>{bs.loadPct}%</td>
-                    <td style={{ padding: "8px 6px", borderBottom: "1px solid #f2f4f7" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor(bs.status), display: "inline-block" }} />
-                        <span style={{ textTransform: "capitalize" }}>{bs.status}</span>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
           <div style={cardStyle}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#101828", marginBottom: 8 }}>UAV Network Optimization</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
@@ -795,13 +915,16 @@ export function NetworkPage() {
             {selectedSnapshot && selectedUav ? (
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 12, color: "#344054" }}>
-                  <b>{selectedUav.id}</b> on mission <b>{selectedUav.mission}</b> ({selectedUav.qosClass} QoS)
+                  <b>{selectedUav.id}</b> on mission <b>{selectedUav.mission}</b>{" "}
+                  <span style={{ color: qosTone(selectedUav.qosClass), fontWeight: 700 }}>({selectedUav.qosClass} QoS)</span>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 8 }}>
+                  <Metric label="Link Score" value={`${selectedLinkScore}%`} tone={scoreTone(selectedLinkScore)} />
                   <Metric label="RSRP" value={`${selectedSnapshot.rsrpDbm} dBm`} tone={selectedSnapshot.rsrpDbm < -90 ? "#b42318" : "#027a48"} />
                   <Metric label="SINR" value={`${selectedSnapshot.sinrDb} dB`} tone={selectedSnapshot.sinrDb < 8 ? "#b42318" : "#027a48"} />
                   <Metric label="Latency" value={`${selectedSnapshot.latencyMs} ms`} tone={selectedSnapshot.latencyMs > 35 ? "#b42318" : "#101828"} />
                   <Metric label="Packet Loss" value={`${selectedSnapshot.packetLossPct}%`} tone={selectedSnapshot.packetLossPct > 2 ? "#b42318" : "#101828"} />
+                  <Metric label="Confidence" value={`${selectedSnapshot.trackingConfidencePct}%`} tone="#0f766e" />
                 </div>
                 <div style={{ fontSize: 11, color: "#667085", lineHeight: 1.35 }}>
                   UTM tracking service monitors live UAV position using the same network links. Interference hotspots reduce SINR and can degrade tracking confidence and latency.
@@ -813,6 +936,7 @@ export function NetworkPage() {
           </div>
         </div>
       </div>
+
     </div>
   );
 }

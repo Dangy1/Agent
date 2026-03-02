@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import os
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from geo_utils import (
+    distance_3d_m,
+    extract_lon_lat_alt,
+    extract_zone_center,
+    horizontal_distance_m,
+    is_valid_lon_lat,
+    local_xy_m,
+    local_xy_m_from_lon_lat,
+    normalize_no_fly_zones,
+    normalize_waypoints,
+    point_with_aliases,
+    zone_with_aliases,
+)
 from .operational_intents import upsert_intent as dss_upsert_intent
 from .operational_intents import volume4d_overlaps
 
@@ -113,9 +127,8 @@ def _looks_like_lon_lat_waypoints(waypoints: List[dict]) -> bool:
     if not waypoints:
         return False
     for wp in waypoints:
-        x = _as_float((wp or {}).get("x", 0.0))
-        y = _as_float((wp or {}).get("y", 0.0))
-        if not (-180.0 <= x <= 180.0 and -90.0 <= y <= 90.0):
+        lon, lat, _alt = extract_lon_lat_alt(wp)
+        if not is_valid_lon_lat(lon, lat):
             return False
     return True
 
@@ -124,10 +137,12 @@ def _looks_like_simulator_grid(airspace_segment: str, waypoints: List[dict]) -> 
     seg = str(airspace_segment or "").strip().lower()
     if not seg.startswith("sector-") or not waypoints:
         return False
+    # Real lon/lat routes can numerically fit inside legacy 0..400 / 0..300
+    # bounds (for example Finland around 24E, 60N). Keep those in geo mode.
+    if _looks_like_lon_lat_waypoints(waypoints):
+        return False
     for wp in waypoints:
-        x = _as_float((wp or {}).get("x", 0.0))
-        y = _as_float((wp or {}).get("y", 0.0))
-        z = _as_float((wp or {}).get("z", 0.0))
+        x, y, z = extract_lon_lat_alt(wp)
         if not (0.0 <= x <= 400.0 and 0.0 <= y <= 300.0 and 0.0 <= z <= 120.0):
             return False
     return True
@@ -144,6 +159,24 @@ def _jsonb_to_list_of_dicts(value: Any) -> List[Dict[str, Any]]:
         if isinstance(parsed, list):
             return [dict(v) for v in parsed if isinstance(v, dict)]
     return []
+
+
+def _airspace_limit_to_meters(value: Any, uom: Any) -> float | None:
+    if value is None:
+        return None
+    raw = _as_float(value, float("nan"))
+    if not math.isfinite(raw):
+        return None
+    unit = str(uom or "FT").strip().upper()
+    if unit == "M":
+        return round(raw, 3)
+    if unit == "FT":
+        return round(raw / FEET_PER_METER, 3)
+    if unit == "FL":
+        return round((raw * 100.0) / FEET_PER_METER, 3)
+    if unit == "SFC":
+        return 0.0
+    return round(raw, 3)
 
 
 class StrategicConflictStatus(str, Enum):
@@ -323,17 +356,14 @@ def reserve_corridor_with_lease(
 
 
 def _distance_ok(waypoints: List[dict]) -> bool:
-    # Simple simulator guardrail: reject absurdly large coordinate jumps.
+    # Guardrail: reject absurdly large 3D jumps in consecutive waypoints.
     if len(waypoints) < 2:
         return True
     try:
         for i in range(1, len(waypoints)):
             a = waypoints[i - 1]
             b = waypoints[i]
-            dx = float(b.get("x", 0)) - float(a.get("x", 0))
-            dy = float(b.get("y", 0)) - float(a.get("y", 0))
-            dz = float(b.get("z", 0)) - float(a.get("z", 0))
-            if (dx * dx + dy * dy + dz * dz) ** 0.5 > 5000:
+            if distance_3d_m(a, b) > 5000.0:
                 return False
     except Exception:
         return False
@@ -342,11 +372,38 @@ def _distance_ok(waypoints: List[dict]) -> bool:
 
 def _route_bounds(waypoints: List[dict]) -> Dict[str, float]:
     if not waypoints:
-        return {"min_x": 0.0, "max_x": 0.0, "min_y": 0.0, "max_y": 0.0, "min_z": 0.0, "max_z": 0.0}
-    xs = [float(w.get("x", 0.0)) for w in waypoints]
-    ys = [float(w.get("y", 0.0)) for w in waypoints]
-    zs = [float(w.get("z", 0.0)) for w in waypoints]
-    return {"min_x": min(xs), "max_x": max(xs), "min_y": min(ys), "max_y": max(ys), "min_z": min(zs), "max_z": max(zs)}
+        return {
+            "min_x": 0.0,
+            "max_x": 0.0,
+            "min_y": 0.0,
+            "max_y": 0.0,
+            "min_z": 0.0,
+            "max_z": 0.0,
+            "min_lon": 0.0,
+            "max_lon": 0.0,
+            "min_lat": 0.0,
+            "max_lat": 0.0,
+            "min_alt_m": 0.0,
+            "max_alt_m": 0.0,
+        }
+    parsed = [extract_lon_lat_alt(w) for w in waypoints]
+    xs = [p[0] for p in parsed]
+    ys = [p[1] for p in parsed]
+    zs = [p[2] for p in parsed]
+    return {
+        "min_x": min(xs),
+        "max_x": max(xs),
+        "min_y": min(ys),
+        "max_y": max(ys),
+        "min_z": min(zs),
+        "max_z": max(zs),
+        "min_lon": min(xs),
+        "max_lon": max(xs),
+        "min_lat": min(ys),
+        "max_lat": max(ys),
+        "min_alt_m": min(zs),
+        "max_alt_m": max(zs),
+    }
 
 
 def _point_in_circle(px: float, py: float, cx: float, cy: float, r: float) -> bool:
@@ -355,87 +412,168 @@ def _point_in_circle(px: float, py: float, cx: float, cy: float, r: float) -> bo
     return (dx * dx + dy * dy) <= r * r
 
 
+def _zone_shape(zone: Dict[str, Any]) -> str:
+    shape_raw = str(zone.get("shape", "circle")).strip().lower()
+    return "circle" if shape_raw == "circle" else "box"
+
+
+def _point_in_box_xy(px: float, py: float, cx: float, cy: float, half_size_m: float) -> bool:
+    return abs(px - cx) <= half_size_m and abs(py - cy) <= half_size_m
+
+
+def _segment_intersects_aabb(
+    ax: float,
+    ay: float,
+    az: float,
+    bx: float,
+    by: float,
+    bz: float,
+    *,
+    x_min: float,
+    x_max: float,
+    y_min: float,
+    y_max: float,
+    z_min: float,
+    z_max: float,
+) -> bool:
+    t0 = 0.0
+    t1 = 1.0
+    eps = 1e-12
+    for p0, p1, lo, hi in ((ax, bx, x_min, x_max), (ay, by, y_min, y_max), (az, bz, z_min, z_max)):
+        d = p1 - p0
+        if abs(d) <= eps:
+            if p0 < lo or p0 > hi:
+                return False
+            continue
+        t_enter = (lo - p0) / d
+        t_exit = (hi - p0) / d
+        if t_enter > t_exit:
+            t_enter, t_exit = t_exit, t_enter
+        t0 = max(t0, t_enter)
+        t1 = min(t1, t_exit)
+        if t0 > t1:
+            return False
+    return True
+
+
 def _waypoint_hits_zone(waypoints: List[dict], zone: Dict[str, Any]) -> bool:
-    cx = float(zone.get("cx", 0.0))
-    cy = float(zone.get("cy", 0.0))
-    r = float(zone.get("radius_m", 0.0))
+    cx, cy = extract_zone_center(zone)
+    r = max(0.0, float(zone.get("radius_m", 0.0)))
     z_min = float(zone.get("z_min", -1e9))
     z_max = float(zone.get("z_max", 1e9))
+    shape = _zone_shape(zone)
+    geo_mode = is_valid_lon_lat(cx, cy)
     for wp in waypoints:
-        x = float(wp.get("x", 0.0))
-        y = float(wp.get("y", 0.0))
-        z = float(wp.get("z", 0.0))
-        if z_min <= z <= z_max and _point_in_circle(x, y, cx, cy, r):
+        lon, lat, z = extract_lon_lat_alt(wp)
+        if not (z_min <= z <= z_max):
+            continue
+        if geo_mode and is_valid_lon_lat(lon, lat):
+            wx, wy = local_xy_m_from_lon_lat(lon, lat, ref_lon=cx, ref_lat=cy)
+            in_zone = _point_in_circle(wx, wy, 0.0, 0.0, r) if shape == "circle" else _point_in_box_xy(wx, wy, 0.0, 0.0, r)
+            if in_zone:
+                return True
+            continue
+        in_zone = _point_in_circle(lon, lat, cx, cy, r) if shape == "circle" else _point_in_box_xy(lon, lat, cx, cy, r)
+        if in_zone:
             return True
     return False
 
 
 def _segment_altitude_overlaps_zone(a: Dict[str, Any], b: Dict[str, Any], zone: Dict[str, Any]) -> bool:
-    z1 = float(a.get("z", 0.0))
-    z2 = float(b.get("z", 0.0))
+    _ax, _ay, z1 = extract_lon_lat_alt(a)
+    _bx, _by, z2 = extract_lon_lat_alt(b)
     z_min = float(zone.get("z_min", -1e9))
     z_max = float(zone.get("z_max", 1e9))
     return max(min(z1, z2), z_min) <= min(max(z1, z2), z_max)
 
 
 def _segment_intersects_nfz_cylinder(a: Dict[str, Any], b: Dict[str, Any], zone: Dict[str, Any]) -> bool:
-    ax = float(a.get("x", 0.0))
-    ay = float(a.get("y", 0.0))
-    az = float(a.get("z", 0.0))
-    bx = float(b.get("x", 0.0))
-    by = float(b.get("y", 0.0))
-    bz = float(b.get("z", 0.0))
-    cx = float(zone.get("cx", 0.0))
-    cy = float(zone.get("cy", 0.0))
+    alon, alat, az = extract_lon_lat_alt(a)
+    blon, blat, bz = extract_lon_lat_alt(b)
+    cx, cy = extract_zone_center(zone)
     r = max(0.0, float(zone.get("radius_m", 0.0)))
     z_min = float(zone.get("z_min", -1e9))
     z_max = float(zone.get("z_max", 1e9))
+    shape = _zone_shape(zone)
+    geo_mode = is_valid_lon_lat(cx, cy) and is_valid_lon_lat(alon, alat) and is_valid_lon_lat(blon, blat)
 
-    dx = bx - ax
-    dy = by - ay
-    dz = bz - az
-
-    # Compute the parametric t-range where the segment is within the NFZ altitude slab.
-    if dz == 0.0:
-        if not (z_min <= az <= z_max):
-            return False
-        t_lo, t_hi = 0.0, 1.0
+    if geo_mode:
+        ax, ay = local_xy_m_from_lon_lat(alon, alat, ref_lon=cx, ref_lat=cy)
+        bx, by = local_xy_m_from_lon_lat(blon, blat, ref_lon=cx, ref_lat=cy)
+        zx_c, zy_c = 0.0, 0.0
     else:
-        t1 = (z_min - az) / dz
-        t2 = (z_max - az) / dz
-        t_lo = max(0.0, min(t1, t2))
-        t_hi = min(1.0, max(t1, t2))
-        if t_lo > t_hi:
-            return False
+        ax, ay = alon, alat
+        bx, by = blon, blat
+        zx_c, zy_c = cx, cy
 
-    # Minimize XY distance-to-center over the valid altitude interval.
-    fx = ax - cx
-    fy = ay - cy
-    denom = dx * dx + dy * dy
-    if denom == 0.0:
-        t_star = t_lo
-    else:
-        t_star = -((fx * dx) + (fy * dy)) / denom
-        t_star = max(t_lo, min(t_hi, t_star))
-    px = ax + dx * t_star
-    py = ay + dy * t_star
-    return _point_in_circle(px, py, cx, cy, r)
+    if shape == "circle":
+        dx = bx - ax
+        dy = by - ay
+        dz = bz - az
+
+        # Compute the parametric t-range where the segment is within the NFZ altitude slab.
+        if dz == 0.0:
+            if not (z_min <= az <= z_max):
+                return False
+            t_lo, t_hi = 0.0, 1.0
+        else:
+            t1 = (z_min - az) / dz
+            t2 = (z_max - az) / dz
+            t_lo = max(0.0, min(t1, t2))
+            t_hi = min(1.0, max(t1, t2))
+            if t_lo > t_hi:
+                return False
+
+        # Minimize XY distance-to-center over the valid altitude interval.
+        fx = ax - zx_c
+        fy = ay - zy_c
+        denom = dx * dx + dy * dy
+        if denom == 0.0:
+            t_star = t_lo
+        else:
+            t_star = -((fx * dx) + (fy * dy)) / denom
+            t_star = max(t_lo, min(t_hi, t_star))
+        px = ax + dx * t_star
+        py = ay + dy * t_star
+        return _point_in_circle(px, py, zx_c, zy_c, r)
+
+    return _segment_intersects_aabb(
+        ax,
+        ay,
+        az,
+        bx,
+        by,
+        bz,
+        x_min=zx_c - r,
+        x_max=zx_c + r,
+        y_min=zy_c - r,
+        y_max=zy_c + r,
+        z_min=z_min,
+        z_max=z_max,
+    )
 
 
 def _segment_intersects_circle_xy(a: Dict[str, Any], b: Dict[str, Any], cx: float, cy: float, r: float) -> bool:
-    ax = float(a.get("x", 0.0))
-    ay = float(a.get("y", 0.0))
-    bx = float(b.get("x", 0.0))
-    by = float(b.get("y", 0.0))
+    alon, alat, _az = extract_lon_lat_alt(a)
+    blon, blat, _bz = extract_lon_lat_alt(b)
+    geo_mode = is_valid_lon_lat(cx, cy) and is_valid_lon_lat(alon, alat) and is_valid_lon_lat(blon, blat)
+    if geo_mode:
+        ax, ay = local_xy_m_from_lon_lat(alon, alat, ref_lon=cx, ref_lat=cy)
+        bx, by = local_xy_m_from_lon_lat(blon, blat, ref_lon=cx, ref_lat=cy)
+        ccx, ccy = 0.0, 0.0
+    else:
+        ax, ay = alon, alat
+        bx, by = blon, blat
+        ccx, ccy = cx, cy
     dx = bx - ax
     dy = by - ay
     if dx == 0.0 and dy == 0.0:
-        return _point_in_circle(ax, ay, cx, cy, r)
-    t = ((cx - ax) * dx + (cy - ay) * dy) / (dx * dx + dy * dy)
+        return _point_in_circle(ax, ay, ccx, ccy, r)
+    t = ((ccx - ax) * dx + (ccy - ay) * dy) / (dx * dx + dy * dy)
     t = max(0.0, min(1.0, t))
     px = ax + t * dx
     py = ay + t * dy
-    return _point_in_circle(px, py, cx, cy, r)
+    return _point_in_circle(px, py, ccx, ccy, r)
 
 
 def _utm_decision_feedback(*, approved: bool, reasons: List[str], checks: Dict[str, Any]) -> Dict[str, Any]:
@@ -473,7 +611,7 @@ def _utm_decision_feedback(*, approved: bool, reasons: List[str], checks: Dict[s
                 messages.append("No-fly-zone conflict detected at " + " and ".join(detail) + ".")
             else:
                 messages.append("No-fly-zone conflict detected on the submitted route.")
-            suggestions.append("Regenerate the route around the no-fly zone and keep waypoint segments outside restricted circles.")
+            suggestions.append("Regenerate the route around the no-fly zone and keep waypoint segments outside restricted volumes.")
             suggestions.append("Re-run UTM verification after route regeneration.")
         if "route_bounds_violation" in reasons:
             messages.append("Route bounds check failed: one or more waypoints are outside the allowed airspace boundary.")
@@ -517,8 +655,26 @@ class UTMApprovalStore:
     )
     no_fly_zones: List[Dict[str, Any]] = field(
         default_factory=lambda: [
-            {"zone_id": "nfz-1", "cx": 150.0, "cy": 110.0, "radius_m": 35.0, "z_min": 0.0, "z_max": 120.0, "reason": "hospital_helipad"},
-            {"zone_id": "nfz-2", "cx": 500.0, "cy": 500.0, "radius_m": 100.0, "z_min": 0.0, "z_max": 500.0, "reason": "restricted_site"},
+            {
+                "zone_id": "nfz-1",
+                "lon": 24.8215,
+                "lat": 60.1838,
+                "shape": "circle",
+                "radius_m": 450.0,
+                "z_min": 0.0,
+                "z_max": 120.0,
+                "reason": "hospital_helipad",
+            },
+            {
+                "zone_id": "nfz-2",
+                "lon": 24.8448,
+                "lat": 60.1938,
+                "shape": "circle",
+                "radius_m": 520.0,
+                "z_min": 0.0,
+                "z_max": 150.0,
+                "reason": "restricted_site",
+            },
         ]
     )
     regulations: Dict[str, Any] = field(
@@ -545,7 +701,7 @@ class UTMApprovalStore:
         return {
             "approvals": dict(self.approvals),
             "weather_by_airspace": dict(self.weather_by_airspace),
-            "no_fly_zones": list(self.no_fly_zones),
+            "no_fly_zones": normalize_no_fly_zones(self.no_fly_zones),
             "regulations": dict(self.regulations),
             "regulation_profiles": {k: dict(v) for k, v in self.regulation_profiles.items()},
             "operator_licenses": dict(self.operator_licenses),
@@ -559,7 +715,7 @@ class UTMApprovalStore:
         if isinstance(state.get("weather_by_airspace"), dict):
             self.weather_by_airspace = dict(state["weather_by_airspace"])
         if isinstance(state.get("no_fly_zones"), list):
-            self.no_fly_zones = [dict(z) for z in state["no_fly_zones"] if isinstance(z, dict)]
+            self.no_fly_zones = normalize_no_fly_zones(state["no_fly_zones"])
         if isinstance(state.get("regulations"), dict):
             self.regulations = dict(state["regulations"])
         if isinstance(state.get("regulation_profiles"), dict):
@@ -649,14 +805,23 @@ class UTMApprovalStore:
         }
 
     def _check_route_bounds_legacy(self, airspace_segment: str, waypoints: List[dict], *, reason: str = "legacy_bounds") -> Dict[str, Any]:
-        seg = SIMULATOR_AIRSPACE_BOUNDS.get(airspace_segment, {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0.0, 120.0]})
+        geo_mode = _looks_like_lon_lat_waypoints(waypoints)
+        if geo_mode:
+            seg = {
+                "x": [-180.0, 180.0],
+                "y": [-90.0, 90.0],
+                "z": [0.0, 2000.0],
+                "lon": [-180.0, 180.0],
+                "lat": [-90.0, 90.0],
+                "altM": [0.0, 2000.0],
+            }
+        else:
+            seg = SIMULATOR_AIRSPACE_BOUNDS.get(airspace_segment, {"x": [-1e9, 1e9], "y": [-1e9, 1e9], "z": [0.0, 120.0]})
         out_of_bounds: List[Dict[str, Any]] = []
         for i, wp in enumerate(waypoints):
-            x = _as_float((wp or {}).get("x", 0.0))
-            y = _as_float((wp or {}).get("y", 0.0))
-            z = _as_float((wp or {}).get("z", 0.0))
+            x, y, z = extract_lon_lat_alt(wp)
             if not (seg["x"][0] <= x <= seg["x"][1] and seg["y"][0] <= y <= seg["y"][1] and seg["z"][0] <= z <= seg["z"][1]):
-                out_of_bounds.append({"index": i, "wp": {"x": x, "y": y, "z": z}})
+                out_of_bounds.append({"index": i, "wp": point_with_aliases({"lon": x, "lat": y, "altM": z})})
         passed = len(out_of_bounds) == 0
         return {
             "airspace_segment": airspace_segment,
@@ -689,12 +854,13 @@ class UTMApprovalStore:
 
         points: List[Dict[str, float]] = []
         for i, wp in enumerate(waypoints):
+            lon, lat, alt_m = extract_lon_lat_alt(wp)
             points.append(
                 {
                     "index": float(i),
-                    "x": _as_float((wp or {}).get("x", 0.0)),
-                    "y": _as_float((wp or {}).get("y", 0.0)),
-                    "z": _as_float((wp or {}).get("z", 0.0)),
+                    "x": lon,
+                    "y": lat,
+                    "z": alt_m,
                 }
             )
 
@@ -879,7 +1045,7 @@ class UTMApprovalStore:
             covered = bool(row[4])
             matches = _jsonb_to_list_of_dicts(row[5])
             if not covered:
-                out_of_bounds.append({"index": idx, "wp": {"x": x, "y": y, "z": z}})
+                out_of_bounds.append({"index": idx, "wp": point_with_aliases({"lon": x, "lat": y, "altM": z})})
             for match in matches:
                 key = ":".join(
                     [
@@ -901,7 +1067,271 @@ class UTMApprovalStore:
             "source": {"engine": "faa_postgis", "selector": selector, "explicit_selector": explicit_selector},
         }
 
+    def query_faa_airspace_geojson(
+        self,
+        *,
+        airspace_segment: str = "faa:*",
+        max_features: int = 300,
+        bbox: Dict[str, float] | None = None,
+        include_inactive: bool = False,
+        include_schedules: bool = False,
+    ) -> Dict[str, Any]:
+        selector, explicit_selector = _faa_selector_from_airspace_segment(airspace_segment)
+        dsn = _resolve_faa_airspace_dsn()
+        if psycopg is None:
+            return {
+                "status": "unavailable",
+                "reason": "psycopg_not_available",
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+            }
+        if not dsn:
+            return {
+                "status": "unavailable",
+                "reason": "faa_airspace_dsn_missing",
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+            }
+
+        limit = max(1, min(2000, int(max_features or 300)))
+        bbox_norm: Dict[str, float] | None = None
+        bbox_gate: float | None = None
+        bbox_lon_min: float | None = None
+        bbox_lat_min: float | None = None
+        bbox_lon_max: float | None = None
+        bbox_lat_max: float | None = None
+        if isinstance(bbox, dict):
+            lon_a = _as_float(bbox.get("lon_min"), float("nan"))
+            lat_a = _as_float(bbox.get("lat_min"), float("nan"))
+            lon_b = _as_float(bbox.get("lon_max"), float("nan"))
+            lat_b = _as_float(bbox.get("lat_max"), float("nan"))
+            if all(math.isfinite(v) for v in [lon_a, lat_a, lon_b, lat_b]):
+                bbox_lon_min = max(-180.0, min(180.0, min(lon_a, lon_b)))
+                bbox_lon_max = max(-180.0, min(180.0, max(lon_a, lon_b)))
+                bbox_lat_min = max(-90.0, min(90.0, min(lat_a, lat_b)))
+                bbox_lat_max = max(-90.0, min(90.0, max(lat_a, lat_b)))
+                if bbox_lon_max > bbox_lon_min and bbox_lat_max > bbox_lat_min:
+                    bbox_gate = bbox_lon_min
+                    bbox_norm = {
+                        "lon_min": float(round(bbox_lon_min, 8)),
+                        "lat_min": float(round(bbox_lat_min, 8)),
+                        "lon_max": float(round(bbox_lon_max, 8)),
+                        "lat_max": float(round(bbox_lat_max, 8)),
+                    }
+
+        query_sql = """
+        SELECT
+          f.feature_pk,
+          f.published_id,
+          f.feature_name,
+          f.airspace_type,
+          f.class_code,
+          f.designator,
+          f.status,
+          f.valid_from::text,
+          f.valid_to::text,
+          v.volume_ordinal,
+          v.lower_limit_value::double precision,
+          v.lower_limit_uom,
+          v.lower_limit_ref,
+          v.upper_limit_value::double precision,
+          v.upper_limit_uom,
+          v.upper_limit_ref,
+          ST_AsGeoJSON(v.lateral_geom) AS geom_json
+        FROM faa_airspace.airspace_feature f
+        JOIN faa_airspace.airspace_volume v
+          ON v.feature_pk = f.feature_pk
+        WHERE (%s::boolean OR f.status = 'active')
+          AND f.valid_from <= CURRENT_DATE
+          AND f.valid_to >= CURRENT_DATE
+          AND (
+            %s::text IS NULL
+            OR upper(f.published_id) = upper(%s::text)
+            OR upper(coalesce(f.designator, '')) = upper(%s::text)
+            OR upper(coalesce(f.feature_name, '')) = upper(%s::text)
+            OR upper(coalesce(f.airspace_type, '')) = upper(%s::text)
+          )
+          AND (
+            %s::double precision IS NULL
+            OR ST_Intersects(
+              v.lateral_geom,
+              ST_MakeEnvelope(
+                %s::double precision,
+                %s::double precision,
+                %s::double precision,
+                %s::double precision,
+                4326
+              )
+            )
+          )
+        ORDER BY f.published_id, f.airspace_type, v.volume_ordinal
+        LIMIT %s
+        """
+
+        schedule_sql = """
+        SELECT
+          s.feature_pk,
+          s.schedule_key,
+          s.timezone_name,
+          s.active_from::text,
+          s.active_to::text,
+          s.recurrence_rule,
+          s.notam_id,
+          s.status,
+          s.notes
+        FROM faa_airspace.airspace_schedule s
+        WHERE s.feature_pk = ANY(%s::bigint[])
+        ORDER BY s.feature_pk, s.schedule_key
+        """
+
+        features: List[Dict[str, Any]] = []
+        schedule_by_feature: Dict[int, List[Dict[str, Any]]] = {}
+        feature_pks: List[int] = []
+        try:
+            with psycopg.connect(dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        query_sql,
+                        (
+                            bool(include_inactive),
+                            selector,
+                            selector,
+                            selector,
+                            selector,
+                            selector,
+                            bbox_gate,
+                            bbox_lon_min,
+                            bbox_lat_min,
+                            bbox_lon_max,
+                            bbox_lat_max,
+                            limit,
+                        ),
+                    )
+                    rows = cur.fetchall()
+                    if include_schedules and rows:
+                        feature_pks = sorted({int(_as_float(row[0], 0.0)) for row in rows if int(_as_float(row[0], 0.0)) > 0})
+                        if feature_pks:
+                            cur.execute(schedule_sql, (feature_pks,))
+                            for srow in cur.fetchall():
+                                fpk = int(_as_float(srow[0], 0.0))
+                                if fpk <= 0:
+                                    continue
+                                schedule_by_feature.setdefault(fpk, []).append(
+                                    {
+                                        "schedule_key": str(srow[1] or ""),
+                                        "timezone_name": str(srow[2] or ""),
+                                        "active_from": str(srow[3] or "") or None,
+                                        "active_to": str(srow[4] or "") or None,
+                                        "recurrence_rule": str(srow[5] or "") or None,
+                                        "notam_id": str(srow[6] or "") or None,
+                                        "status": str(srow[7] or ""),
+                                        "notes": str(srow[8] or "") or None,
+                                    }
+                                )
+        except Exception as exc:
+            return {
+                "status": "query_failed",
+                "reason": str(exc),
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+            }
+
+        airspace_type_counts: Dict[str, int] = {}
+        class_code_counts: Dict[str, int] = {}
+        feature_pk_set: set[int] = set()
+        for row in rows:
+            feature_pk = int(_as_float(row[0], 0.0))
+            feature_pk_set.add(feature_pk)
+            published_id = str(row[1] or "")
+            feature_name = str(row[2] or "")
+            airspace_type = str(row[3] or "")
+            class_code = str(row[4] or "")
+            designator = str(row[5] or "")
+            status = str(row[6] or "")
+            valid_from = str(row[7] or "")
+            valid_to = str(row[8] or "")
+            volume_ordinal = int(_as_float(row[9], 0.0))
+            lower_value = row[10]
+            lower_uom = str(row[11] or "")
+            lower_ref = str(row[12] or "")
+            upper_value = row[13]
+            upper_uom = str(row[14] or "")
+            upper_ref = str(row[15] or "")
+            geom_json = row[16]
+
+            geometry: Dict[str, Any] | None = None
+            if isinstance(geom_json, dict):
+                geometry = dict(geom_json)
+            elif isinstance(geom_json, str):
+                try:
+                    parsed = json.loads(geom_json)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    geometry = parsed
+            if not isinstance(geometry, dict):
+                continue
+
+            aid = airspace_type or "unknown"
+            ccode = class_code or "unknown"
+            airspace_type_counts[aid] = int(airspace_type_counts.get(aid, 0) + 1)
+            class_code_counts[ccode] = int(class_code_counts.get(ccode, 0) + 1)
+
+            properties: Dict[str, Any] = {
+                "feature_pk": feature_pk,
+                "published_id": published_id,
+                "feature_name": feature_name,
+                "airspace_type": airspace_type,
+                "class_code": class_code,
+                "designator": designator,
+                "status": status,
+                "valid_from": valid_from,
+                "valid_to": valid_to,
+                "volume_ordinal": volume_ordinal,
+                "lower_limit_value": lower_value,
+                "lower_limit_uom": lower_uom,
+                "lower_limit_ref": lower_ref,
+                "upper_limit_value": upper_value,
+                "upper_limit_uom": upper_uom,
+                "upper_limit_ref": upper_ref,
+                "lower_limit_m": _airspace_limit_to_meters(lower_value, lower_uom),
+                "upper_limit_m": _airspace_limit_to_meters(upper_value, upper_uom),
+            }
+            if include_schedules:
+                properties["schedules"] = list(schedule_by_feature.get(feature_pk, []))
+
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"{published_id}:{airspace_type}:{volume_ordinal}",
+                    "geometry": geometry,
+                    "properties": properties,
+                }
+            )
+
+        return {
+            "status": "ok",
+            "selector": selector,
+            "explicit_selector": explicit_selector,
+            "max_features": limit,
+            "bbox": bbox_norm,
+            "returned_feature_count": len(features),
+            "returned_airspace_feature_count": len(feature_pk_set),
+            "summary": {
+                "airspace_types": airspace_type_counts,
+                "class_codes": class_code_counts,
+            },
+            "collection": {"type": "FeatureCollection", "features": features},
+            "source": {
+                "engine": "faa_postgis",
+                "selector": selector,
+                "explicit_selector": explicit_selector,
+                "dsn_configured": bool(dsn),
+            },
+        }
+
     def check_route_bounds(self, airspace_segment: str, waypoints: List[dict]) -> Dict[str, Any]:
+        waypoints = normalize_waypoints(waypoints)
         mode = _normalize_faa_geofence_mode(str(os.getenv("UTM_FAA_GEOFENCE_MODE", "auto") or "auto"))
         selector, explicit_selector = _faa_selector_from_airspace_segment(airspace_segment)
 
@@ -936,11 +1366,13 @@ class UTMApprovalStore:
                 out_of_bounds = [
                     {
                         "index": i,
-                        "wp": {
-                            "x": _as_float((wp or {}).get("x", 0.0)),
-                            "y": _as_float((wp or {}).get("y", 0.0)),
-                            "z": _as_float((wp or {}).get("z", 0.0)),
-                        },
+                        "wp": point_with_aliases(
+                            {
+                                "lon": extract_lon_lat_alt(wp)[0],
+                                "lat": extract_lon_lat_alt(wp)[1],
+                                "altM": extract_lon_lat_alt(wp)[2],
+                            }
+                        ),
                     }
                     for i, wp in enumerate(waypoints)
                 ]
@@ -979,58 +1411,70 @@ class UTMApprovalStore:
         return self._check_route_bounds_legacy(airspace_segment, waypoints, reason="faa_auto_not_applicable")
 
     def check_no_fly_zones(self, waypoints: List[dict]) -> Dict[str, Any]:
+        waypoints = normalize_waypoints(waypoints)
+        zones = normalize_no_fly_zones(self.no_fly_zones)
         hits = []
         waypoint_conflicts: List[Dict[str, Any]] = []
         segment_conflicts: List[Dict[str, Any]] = []
-        for zone in self.no_fly_zones:
+        for zone in zones:
             zone_hit = False
-            cx = float(zone.get("cx", 0.0))
-            cy = float(zone.get("cy", 0.0))
-            r = float(zone.get("radius_m", 0.0))
+            cx, cy = extract_zone_center(zone)
+            r = max(0.0, float(zone.get("radius_m", 0.0)))
             z_min = float(zone.get("z_min", -1e9))
             z_max = float(zone.get("z_max", 1e9))
+            shape = _zone_shape(zone)
             zid = str(zone.get("zone_id", "nfz"))
             reason = str(zone.get("reason", "restricted"))
 
             for i, wp in enumerate(waypoints):
-                x = float(wp.get("x", 0.0))
-                y = float(wp.get("y", 0.0))
-                z = float(wp.get("z", 0.0))
-                if z_min <= z <= z_max and _point_in_circle(x, y, cx, cy, r):
-                    zone_hit = True
-                    waypoint_conflicts.append(
-                        {
-                            "zone_id": zid,
-                            "reason": reason,
-                            "waypoint_index": i,
-                            "waypoint": {"x": x, "y": y, "z": z},
-                            "conflict": "waypoint_inside_nfz",
-                        }
-                    )
+                x, y, z = extract_lon_lat_alt(wp)
+                if not (z_min <= z <= z_max):
+                    continue
+                if is_valid_lon_lat(cx, cy) and is_valid_lon_lat(x, y):
+                    wx, wy = local_xy_m_from_lon_lat(x, y, ref_lon=cx, ref_lat=cy)
+                    in_zone = _point_in_circle(wx, wy, 0.0, 0.0, r) if shape == "circle" else _point_in_box_xy(wx, wy, 0.0, 0.0, r)
+                else:
+                    in_zone = _point_in_circle(x, y, cx, cy, r) if shape == "circle" else _point_in_box_xy(x, y, cx, cy, r)
+                if not in_zone:
+                    continue
+                zone_hit = True
+                waypoint_conflicts.append(
+                    {
+                        "zone_id": zid,
+                        "shape": shape,
+                        "reason": reason,
+                        "waypoint_index": i,
+                        "waypoint": point_with_aliases({"lon": x, "lat": y, "altM": z}),
+                        "conflict": "waypoint_inside_nfz",
+                    }
+                )
 
             for i in range(1, len(waypoints)):
                 a = waypoints[i - 1]
                 b = waypoints[i]
                 if _segment_intersects_nfz_cylinder(a, b, zone):
+                    a_lon, a_lat, a_alt = extract_lon_lat_alt(a)
+                    b_lon, b_lat, b_alt = extract_lon_lat_alt(b)
                     zone_hit = True
                     segment_conflicts.append(
                         {
                             "zone_id": zid,
+                            "shape": shape,
                             "reason": reason,
                             "segment_start_index": i - 1,
                             "segment_end_index": i,
-                            "a": {"x": float(a.get("x", 0.0)), "y": float(a.get("y", 0.0)), "z": float(a.get("z", 0.0))},
-                            "b": {"x": float(b.get("x", 0.0)), "y": float(b.get("y", 0.0)), "z": float(b.get("z", 0.0))},
+                            "a": point_with_aliases({"lon": a_lon, "lat": a_lat, "altM": a_alt}),
+                            "b": point_with_aliases({"lon": b_lon, "lat": b_lat, "altM": b_alt}),
                             "conflict": "segment_crosses_nfz_3d",
                         }
                     )
 
             if zone_hit:
-                hits.append({"zone_id": zone.get("zone_id"), "reason": zone.get("reason")})
+                hits.append({"zone_id": zone.get("zone_id"), "shape": shape, "reason": zone.get("reason")})
         return {
             "ok": len(hits) == 0,
             "hits": hits,
-            "checked_zones": len(self.no_fly_zones),
+            "checked_zones": len(zones),
             "waypoint_conflicts": waypoint_conflicts,
             "segment_conflicts": segment_conflicts,
             "conflict_counts": {
@@ -1043,19 +1487,28 @@ class UTMApprovalStore:
     def add_no_fly_zone(
         self,
         *,
-        cx: float,
-        cy: float,
+        cx: float | None = None,
+        cy: float | None = None,
+        lon: float | None = None,
+        lat: float | None = None,
         radius_m: float,
         z_min: float = 0.0,
         z_max: float = 120.0,
         reason: str = "operator_defined",
         zone_id: str | None = None,
+        shape: str | None = None,
     ) -> Dict[str, Any]:
         zid = zone_id or f"nfz-{len(self.no_fly_zones) + 1}"
+        lon_v = float(lon if lon is not None else (cx if cx is not None else 0.0))
+        lat_v = float(lat if lat is not None else (cy if cy is not None else 0.0))
+        shape_v = "circle" if str(shape or "circle").strip().lower() == "circle" else "box"
         rec = {
             "zone_id": str(zid),
-            "cx": float(cx),
-            "cy": float(cy),
+            "lon": lon_v,
+            "lat": lat_v,
+            "cx": lon_v,
+            "cy": lat_v,
+            "shape": shape_v,
             "radius_m": float(radius_m),
             "z_min": float(z_min),
             "z_max": float(z_max),
@@ -1231,17 +1684,20 @@ class UTMApprovalStore:
         return {"operator_license_id": operator_license_id, **rec}
 
     def check_regulations(self, waypoints: List[dict], requested_speed_mps: float = 12.0, operator_license_id: str | None = None) -> Dict[str, Any]:
+        waypoints = normalize_waypoints(waypoints)
         bounds = _route_bounds(waypoints)
-        span_x = bounds["max_x"] - bounds["min_x"]
-        span_y = bounds["max_y"] - bounds["min_y"]
-        span = (span_x * span_x + span_y * span_y) ** 0.5
+        span = 0.0
+        if len(waypoints) >= 2:
+            for i in range(len(waypoints)):
+                for j in range(i + 1, len(waypoints)):
+                    span = max(span, horizontal_distance_m(waypoints[i], waypoints[j]))
         effective = self.effective_regulations(operator_license_id)
         max_alt = float(effective.get("max_altitude_m", 120.0))
         max_span = float(effective.get("max_route_span_m", 2000.0))
         max_speed = float(effective.get("max_speed_mps", 25.0))
         checks = {
             "geometry_ok": _distance_ok(waypoints),
-            "altitude_ok": bounds["max_z"] <= max_alt,
+            "altitude_ok": bounds["max_alt_m"] <= max_alt,
             "route_span_ok": span <= max_span,
             "speed_ok": float(requested_speed_mps) <= max_speed,
         }
@@ -1273,6 +1729,7 @@ class UTMApprovalStore:
         operator_license_id: str | None = None,
         required_license_class: str = "VLOS",
     ) -> Tuple[bool, Dict[str, Any], List[str]]:
+        waypoints = normalize_waypoints(waypoints)
         weather = self.check_weather(airspace_segment, operator_license_id=operator_license_id)
         route_bounds = self.check_route_bounds(airspace_segment, waypoints)
         nfz = self.check_no_fly_zones(waypoints)
@@ -1320,7 +1777,7 @@ class UTMApprovalStore:
         operator_license_id: str | None = None,
         required_license_class: str = "VLOS",
     ) -> Dict[str, Any]:
-        waypoints = waypoints or []
+        waypoints = normalize_waypoints(waypoints or [])
         approved, checks, reasons = self._compose_verdict(
             uav_id=uav_id,
             airspace_segment=airspace_segment,
@@ -1355,6 +1812,7 @@ class UTMApprovalStore:
                 "route_id": route_id,
                 "time_window": [now.isoformat().replace("+00:00", "Z"), expires_at],
             },
+            "coordinate_schema": "lon_lat_altM",
             "operator_license_id": operator_license_id,
             "authorization": (
                 dict((checks.get("operator_license") or {}).get("authorization"))
