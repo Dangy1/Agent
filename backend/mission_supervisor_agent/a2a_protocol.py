@@ -8,8 +8,11 @@ from typing import Any, Dict, Tuple
 
 from .command_types import classify_command_operation_type
 
-A2A_PROTOCOL_ID = "google.a2a+json"
-A2A_PROTOCOL_VERSION = "0.1"
+# A2A JSON-RPC request envelope (https://a2a-protocol.org).
+A2A_PROTOCOL_ID = "A2A"
+A2A_PROTOCOL_VERSION = "0.2.6"
+A2A_JSONRPC_VERSION = "2.0"
+A2A_SEND_MESSAGE_METHOD = "message/send"
 MCP_PROTOCOL_ID = "modelcontextprotocol.io/jsonrpc"
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
@@ -161,10 +164,24 @@ def command_to_mcp_invocation(command: Dict[str, Any], state: Dict[str, Any]) ->
     }
 
 
+def _command_summary_text(cmd: Dict[str, Any], intent_type: str, sender: str, receiver: str) -> str:
+    domain = _clean_str(cmd.get("domain"), default="unknown")
+    op = _clean_str(cmd.get("op"), default="unknown")
+    step_id = _clean_str(cmd.get("step_id"))
+    if step_id:
+        return f"[{sender} -> {receiver}] {intent_type} {domain}.{op} (step={step_id})"
+    return f"[{sender} -> {receiver}] {intent_type} {domain}.{op}"
+
+
 @dataclass(frozen=True)
 class A2AEnvelope:
     protocol: str
     version: str
+    jsonrpc: str
+    id: str
+    method: str
+    params: Dict[str, Any]
+    # Legacy aliases are preserved to avoid breaking existing mission traces.
     message_id: str
     parent_message_id: str | None
     created_at: str
@@ -208,16 +225,49 @@ class A2AEnvelope:
         params = cmd["params"]
         deterministic_hint = bool(params.get("_idempotent")) or operation_type == "observe"
         message_id = f"a2a-{digest}"
+        resolved_receiver = receiver or _clean_str(cmd.get("domain"), default="unknown")
+        message: Dict[str, Any] = {
+            # `kind` is still commonly used by current A2A SDK examples.
+            "kind": "message",
+            "messageId": message_id,
+            "contextId": mission_id,
+            "taskId": correlation_id,
+            "role": "agent",
+            "parts": [
+                {"kind": "text", "text": _command_summary_text(cmd, intent_type, sender, resolved_receiver)},
+                {"kind": "data", "data": dict(cmd), "metadata": {"contentType": "application/json"}},
+            ],
+            "metadata": {
+                "sender": sender,
+                "receiver": resolved_receiver,
+                "intentType": intent_type,
+                "missionPhase": _clean_str(state.get("mission_phase"), default="unknown"),
+                "deterministicHint": deterministic_hint,
+                "taskIdempotencyKey": _clean_str(state.get("task_idempotency_key")),
+            },
+        }
+        request_params: Dict[str, Any] = {
+            "message": message,
+            "configuration": {
+                "acceptedOutputModes": ["application/json"],
+                "historyLength": 0,
+                "blocking": True,
+            },
+        }
         return cls(
             protocol=A2A_PROTOCOL_ID,
             version=A2A_PROTOCOL_VERSION,
+            jsonrpc=A2A_JSONRPC_VERSION,
+            id=message_id,
+            method=A2A_SEND_MESSAGE_METHOD,
+            params=request_params,
             message_id=message_id,
             parent_message_id=_clean_str(state.get("parent_message_id")) or None,
             created_at=created_at,
             correlation_id=correlation_id,
             mission_id=mission_id,
             sender=sender,
-            receiver=receiver or _clean_str(cmd.get("domain"), default="unknown"),
+            receiver=resolved_receiver,
             intent_type=intent_type,
             command=cmd,
             constraints={"deterministic_hint": deterministic_hint},
@@ -231,6 +281,10 @@ class A2AEnvelope:
         return {
             "protocol": self.protocol,
             "version": self.version,
+            "jsonrpc": self.jsonrpc,
+            "id": self.id,
+            "method": self.method,
+            "params": dict(self.params),
             "message_id": self.message_id,
             "parent_message_id": self.parent_message_id,
             "created_at": self.created_at,
@@ -249,6 +303,8 @@ __all__ = [
     "A2AEnvelope",
     "A2A_PROTOCOL_ID",
     "A2A_PROTOCOL_VERSION",
+    "A2A_JSONRPC_VERSION",
+    "A2A_SEND_MESSAGE_METHOD",
     "MCP_PROTOCOL_ID",
     "MCP_PROTOCOL_VERSION",
     "command_to_mcp_invocation",

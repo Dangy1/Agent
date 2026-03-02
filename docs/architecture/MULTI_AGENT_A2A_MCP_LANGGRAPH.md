@@ -33,33 +33,37 @@ Use strict domain boundaries:
 
 Only the supervisor should orchestrate cross-domain plans.
 
-## 3. Agent-to-agent protocol (Google A2A style envelope)
+## 3. Agent-to-agent protocol (Google A2A standardized envelope)
 
 Implemented in:
 
 - `backend/mission_supervisor_agent/a2a_protocol.py`
 
-Each dispatched command now has an envelope like:
+Each dispatched command now emits an A2A JSON-RPC request (`message/send`) with a `Message` payload:
 
 ```json
 {
-  "protocol": "google.a2a+json",
-  "version": "0.1",
-  "message_id": "a2a-...",
-  "correlation_id": "task-...",
-  "mission_id": "mission-...",
-  "sender": "mission_supervisor",
-  "receiver": "uav|utm|network",
-  "intent_type": "observe|actuate",
-  "command": {
-    "domain": "uav",
-    "op": "launch",
-    "params": {"uav_id": "uav-1"}
+  "protocol": "A2A",
+  "version": "0.2.6",
+  "jsonrpc": "2.0",
+  "id": "a2a-...",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "messageId": "a2a-...",
+      "contextId": "mission-...",
+      "taskId": "task-...",
+      "role": "agent",
+      "parts": [
+        {"kind": "text", "text": "[mission_supervisor -> uav] actuate uav.launch"},
+        {"kind": "data", "data": {"domain": "uav", "op": "launch", "params": {"uav_id": "uav-1"}}}
+      ]
+    }
   }
 }
 ```
 
-This gives a protocol-stable audit contract between agents.
+Legacy aliases (`message_id`, `correlation_id`, `mission_id`, `intent_type`) are still included for backward-compatible trace consumers.
 
 ## 4. MCP protocol bridging
 

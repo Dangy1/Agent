@@ -11,11 +11,11 @@ This repo contains one integrated local stack:
 - FAA airspace backend (PostGIS + ingestion scripts)
 - React/Vite frontend console
 
-For a dedicated clean-machine runbook, see:
+For a dedicated clean-machine runbook and architecture references, see:
 
-- [README_ZERO_TO_RUN.md](/home/dang/agent_test/README_ZERO_TO_RUN.md)
-- [Multi-Agent A2A/MCP/LangGraph Architecture](/home/dang/agent_test/docs/architecture/MULTI_AGENT_A2A_MCP_LANGGRAPH.md)
-- [Agent-System Skills (LangGraph/LangChain)](/home/dang/agent_test/docs/architecture/AGENT_SYSTEM_SKILLS.md)
+- [README_ZERO_TO_RUN.md](README_ZERO_TO_RUN.md)
+- [Multi-Agent A2A/MCP/LangGraph Architecture](docs/architecture/MULTI_AGENT_A2A_MCP_LANGGRAPH.md)
+- [Agent-System Skills (LangGraph/LangChain)](docs/architecture/AGENT_SYSTEM_SKILLS.md)
 
 ## Start From Zero
 
@@ -160,12 +160,74 @@ curl -sS -X POST http://127.0.0.1:8023/api/mission/skills/match \
   -d '{"request_text":"run dss conflict and subscription checks"}' | jq
 ```
 
+## Mission Supervisor Quickstart (Port `8023`)
+
+Start a mission from plain text:
+
+```bash
+MISSION_ID=$(
+  curl -sS -X POST http://127.0.0.1:8023/api/mission/start \
+    -H "Content-Type: application/json" \
+    -d '{"request_text":"plan and launch uav-1 in sector-A3 with network monitoring"}' \
+  | jq -r '.result.mission_id'
+)
+echo "$MISSION_ID"
+```
+
+Fetch mission state/events:
+
+```bash
+curl -sS "http://127.0.0.1:8023/api/mission/${MISSION_ID}/state" | jq
+curl -sS "http://127.0.0.1:8023/api/mission/${MISSION_ID}/events?limit=100" | jq
+```
+
+Inspect state graph and protocol trace:
+
+```bash
+curl -sS http://127.0.0.1:8023/api/mission/graph | jq
+curl -sS "http://127.0.0.1:8023/api/mission/${MISSION_ID}/protocol-trace?limit=200&include_replayed=true" | jq
+```
+
+Run mission supervisor regression tests:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8023/api/mission/tests/run -H "Content-Type: application/json" -d '{"timeout_sec":180}' | jq
+curl -sS http://127.0.0.1:8023/api/mission/tests/latest | jq
+```
+
+## Mission Supervisor Execution Model
+
+The mission graph runs these major phases:
+
+- intake/context: `ingest_request -> parse_intent -> risk_assessment -> refresh_* -> ingest_events`
+- planning: `plan_build -> approval_check`
+- guardrails: `approval_gate` (when required) and `policy_check`
+- execution: `lock_manager -> dispatch_step -> execute_step -> verify_outcome -> progress`
+- recovery/finalization: `recovery/complete -> release_locks`
+
+Command handling is split into three layers:
+
+- command typing (`backend/mission_supervisor_agent/command_types.py`)
+  - `observe`: strict allowlist tuples like `uav.status`, `network.health`, `utm.dss_query_*`
+  - `actuate`: write/control operations for `uav|utm|network|dss|uss` domains
+- domain dispatch (`backend/mission_supervisor_agent/domain_dispatch.py`)
+  - `dispatch_observe_command` and `dispatch_actuate_command` route domain/op pairs to tool invocations
+- audited command bus (`backend/mission_supervisor_agent/command_bus.py`)
+  - wraps each command with an audit envelope + A2A envelope + MCP invocation map
+  - persists dispatch/completion events in `AgentDB`
+  - replays cached successful results (when available) via task memory
+
+Locking and rollback:
+
+- `backend/mission_supervisor_agent/lock_manager.py` enforces in-memory ownership for each step `resource_keys`
+- lock contention or failed verification drives `next_action=rollback` and runs recovery actions
+
 ## UAV/UTM Procedure MCP Server
 
 For high-level UAV/UTM MCP tools (prepare, plan, submit, launch/step, replan), use:
 
-- [backend/others/MCP_UAV_UTM_PROCEDURES.md](/home/dang/agent_test/backend/others/MCP_UAV_UTM_PROCEDURES.md)
-- [backend/others/MCP_UAV_UTM_STRICT_OPS.md](/home/dang/agent_test/backend/others/MCP_UAV_UTM_STRICT_OPS.md)
+- [backend/others/MCP_UAV_UTM_PROCEDURES.md](backend/others/MCP_UAV_UTM_PROCEDURES.md)
+- [backend/others/MCP_UAV_UTM_STRICT_OPS.md](backend/others/MCP_UAV_UTM_STRICT_OPS.md)
 
 Runtime MCP profiles available:
 
